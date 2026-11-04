@@ -11,6 +11,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // libsu (dépendance de revanced-library)
+        maven("https://jitpack.io")
         // ReVanced publie revanced-patcher / revanced-library sur GitHub Packages.
         // Un jeton GitHub (scope "read:packages") est nécessaire, même pour lire des paquets publics.
         maven {
