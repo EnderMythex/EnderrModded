@@ -64,7 +64,8 @@ kotlin {
     jvmToolchain(17)
     compilerOptions {
         jvmTarget = JvmTarget.JVM_17
-        freeCompilerArgs.addAll("-Xcontext-parameters")
+        // revanced-patcher est compilé avec des fonctionnalités Kotlin expérimentales.
+        freeCompilerArgs.addAll("-Xcontext-parameters", "-Xexplicit-backing-fields", "-Xskip-prerelease-check")
     }
 }
 
