@@ -15,7 +15,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -139,7 +138,7 @@ fun ManualRunScreen(vm: MainViewModel, manual: ManualViewModel) {
 
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(if (manual.isPatching) "Patch en cours…" else "Patch terminé", onBack = if (manual.isPatching) null else ({ vm.back(); Unit }))
-        if (manual.isPatching) LinearProgressIndicator(Modifier.fillMaxWidth())
+        if (manual.isPatching) WavyLinearProgress(null, Modifier.fillMaxWidth().padding(horizontal = 16.dp))
         TextButton(
             onClick = { copyLogs(context, "Patch manuel ${manual.apk?.packageName.orEmpty()} v${manual.apk?.versionName.orEmpty()}", manual.logs) },
             modifier = Modifier.padding(horizontal = 8.dp),

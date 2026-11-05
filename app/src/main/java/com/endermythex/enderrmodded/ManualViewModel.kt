@@ -153,8 +153,21 @@ class ManualViewModel(app: Application) : AndroidViewModel(app) {
         Installer.reset(KEY)
         patchJob = viewModelScope.launch {
             try {
-                result = engine.patch(source.file, patches, "manual.apk") { line ->
-                    viewModelScope.launch(Dispatchers.Main) { logs = logs + line }
+                // Logs regroupés toutes les 250 ms pour ne pas faire ramer l'interface.
+                val pending = ArrayList<String>()
+                val ticker = launch {
+                    while (true) {
+                        kotlinx.coroutines.delay(250)
+                        val batch = synchronized(pending) { pending.toList().also { pending.clear() } }
+                        if (batch.isNotEmpty()) logs = (logs + batch).takeLast(2000)
+                    }
+                }
+                try {
+                    result = engine.patch(source.file, patches, "manual.apk") { line -> synchronized(pending) { pending += line } }
+                } finally {
+                    ticker.cancel()
+                    val batch = synchronized(pending) { pending.toList() }
+                    if (batch.isNotEmpty()) logs = (logs + batch).takeLast(2000)
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 logs = logs + "Annulé."

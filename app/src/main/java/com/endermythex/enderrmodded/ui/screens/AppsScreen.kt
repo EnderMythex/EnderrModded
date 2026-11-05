@@ -15,7 +15,6 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -54,7 +53,7 @@ fun AppsScreen(vm: MainViewModel) {
             InfoCard {
                 Text("Nouvelle version d'EnderrModded : ${release.tag}", style = MaterialTheme.typography.titleSmall)
                 val progress = vm.selfUpdateProgress
-                if (progress != null) LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+                if (progress != null) WavyLinearProgress(progress)
                 else Button(onClick = vm::installSelfUpdate) { Text("Mettre à jour") }
             }
         }

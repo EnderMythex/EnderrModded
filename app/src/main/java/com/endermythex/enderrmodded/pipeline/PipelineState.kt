@@ -48,19 +48,52 @@ object PipelineRegistry {
     fun clear(packageName: String) = _runs.update { it - packageName }
 }
 
-/** Raccourcis pour un run donné. */
+/** Raccourcis pour un run donné. Les logs sont regroupés pour ne pas faire ramer l'interface. */
 class RunReporter(private val packageName: String) {
-    fun log(line: String) = PipelineRegistry.mutate(packageName) { it.copy(logs = (it.logs + line).takeLast(500)) }
-    fun step(step: Step, status: StepStatus) = PipelineRegistry.mutate(packageName) {
-        it.copy(steps = it.steps + (step to status), progress = if (status == StepStatus.RUNNING) null else it.progress)
-    }
-    /** Marque l'étape en échec ainsi que toute étape restée "en cours". */
-    fun fail(step: Step) = PipelineRegistry.mutate(packageName) { state ->
-        state.copy(
-            steps = state.steps.mapValues { (s, status) -> if (s == step || status == StepStatus.RUNNING) StepStatus.FAILED else status },
-            progress = null,
-        )
+    private val pending = ArrayList<String>()
+    private var lastFlush = 0L
+
+    fun log(line: String) {
+        val now = System.currentTimeMillis()
+        val toFlush = synchronized(pending) {
+            pending += line
+            if (now - lastFlush < 250 && pending.size < 200) return
+            lastFlush = now
+            pending.toList().also { pending.clear() }
+        }
+        PipelineRegistry.mutate(packageName) { it.copy(logs = (it.logs + toFlush).takeLast(2000)) }
     }
 
-    fun progress(value: Float?) = PipelineRegistry.mutate(packageName) { it.copy(progress = value) }
+    /** Publie les logs en attente (fin d'étape, fin de run). */
+    fun flush() {
+        val toFlush = synchronized(pending) { pending.toList().also { pending.clear(); lastFlush = System.currentTimeMillis() } }
+        if (toFlush.isNotEmpty()) PipelineRegistry.mutate(packageName) { it.copy(logs = (it.logs + toFlush).takeLast(2000)) }
+    }
+
+    fun step(step: Step, status: StepStatus) {
+        flush()
+        PipelineRegistry.mutate(packageName) {
+            it.copy(steps = it.steps + (step to status), progress = if (status == StepStatus.RUNNING) null else it.progress)
+        }
+    }
+
+    /** Marque l'étape en échec ainsi que toute étape restée "en cours". */
+    fun fail(step: Step) {
+        flush()
+        PipelineRegistry.mutate(packageName) { state ->
+            state.copy(
+                steps = state.steps.mapValues { (s, status) -> if (s == step || status == StepStatus.RUNNING) StepStatus.FAILED else status },
+                progress = null,
+            )
+        }
+    }
+
+    private var lastProgress = -1f
+
+    /** Progression (0..1), mise à jour au plus tous les 1 %. */
+    fun progress(value: Float?) {
+        if (value != null && value - lastProgress < 0.01f && value < 1f) return
+        lastProgress = value ?: -1f
+        PipelineRegistry.mutate(packageName) { it.copy(progress = value) }
+    }
 }

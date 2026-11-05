@@ -128,6 +128,7 @@ class AutoPatcher(private val context: Context) {
             report.log("✘ ${e.message ?: e}")
             PipelineRegistry.mutate(packageName) { it.copy(running = false, error = e.message ?: e.toString()) }
         } finally {
+            report.flush()
             workDir.deleteRecursively()
         }
         return PipelineRegistry.runs.value.getValue(packageName)

@@ -10,6 +10,15 @@ import kotlin.reflect.KProperty
 class Settings(context: Context) {
     private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
+    /** RAM totale de l'appareil (Mo). */
+    val deviceRamMb: Int = runCatching {
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        android.app.ActivityManager.MemoryInfo().also { am.getMemoryInfo(it) }.totalMem / (1024 * 1024)
+    }.getOrDefault(4096L).toInt()
+
+    /** Limites proposées pour le processus de patch, selon la RAM de l'appareil. */
+    val memoryChoices: List<Int> get() = listOf(512, 768, 1024, 1536, 2048, 3072).filter { it <= deviceRamMb / 2 }.ifEmpty { listOf(512) }
+
     // --- Patchs ---
     var patchesRepo by string("patches_repo", DEFAULT_PATCHES_REPO)
     var patchesPrerelease by boolean("patches_prerelease", false)
@@ -20,6 +29,11 @@ class Settings(context: Context) {
     var sourceOrder by string("source_order", "device,apkmirror")
     var verifySignatures by boolean("verify_signatures", true)
     var useLatestVersion by boolean("use_latest_version", false)
+
+    // --- Performances ---
+    /** Patch dans un processus séparé avec sa propre limite de mémoire (comme ReVanced Manager). */
+    var useProcessRuntime by boolean("use_process_runtime", true)
+    var processMemoryMb by int("process_memory_mb", (deviceRamMb / 4).coerceIn(512, 1536).let { m -> listOf(512, 768, 1024, 1536).last { it <= m } })
 
     // --- Patch & installation ---
     var autoInstall by boolean("auto_install", true)

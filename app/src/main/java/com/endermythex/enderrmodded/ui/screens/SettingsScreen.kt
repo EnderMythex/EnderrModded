@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -61,6 +62,30 @@ fun SettingsScreen(vm: MainViewModel) {
         ) { s.verifySignatures = it }
         SwitchRow("Toujours la dernière version", "Ignore la version recommandée par les patchs (déconseillé)", s.useLatestVersion) { s.useLatestVersion = it }
         SwitchRow("Garder les APK téléchargés", null, s.keepDownloads) { s.keepDownloads = it }
+
+        SectionTitle("Performances")
+        SwitchRow(
+            "Processus de patch séparé",
+            "Patche dans un processus à part avec plus de mémoire : plus rapide, l'interface ne rame plus (comme ReVanced Manager)",
+            s.useProcessRuntime,
+        ) { s.useProcessRuntime = it }
+        ListItem(
+            headlineContent = { Text("Mémoire du processus de patch") },
+            supportingContent = {
+                Column {
+                    Text("RAM de l'appareil : %.1f Go".format(s.deviceRamMb / 1024.0))
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        s.memoryChoices.forEach { mb ->
+                            FilterChip(
+                                s.processMemoryMb == mb, { s.processMemoryMb = mb },
+                                label = { Text(if (mb >= 1024) "%.1f Go".format(mb / 1024.0).replace(",0", "").replace(".0", "") else "$mb Mo") },
+                                enabled = s.useProcessRuntime,
+                            )
+                        }
+                    }
+                }
+            },
+        )
 
         SectionTitle("Installation")
         SwitchRow("Installer automatiquement", "Lance l'installation à la fin du patch", s.autoInstall) { s.autoInstall = it }

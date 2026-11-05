@@ -21,9 +21,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -89,7 +87,7 @@ fun RunScreen(vm: MainViewModel, packageName: String) {
                 val status = state.steps[step] ?: StepStatus.WAITING
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     when (status) {
-                        StepStatus.RUNNING -> CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                        StepStatus.RUNNING -> WavyCircularProgress(size = 24.dp)
                         StepStatus.DONE -> Icon(Icons.Default.CheckCircle, null, tint = MaterialTheme.colorScheme.primary)
                         StepStatus.FAILED -> Icon(Icons.Default.Close, null, tint = MaterialTheme.colorScheme.error)
                         StepStatus.SKIPPED -> Icon(Icons.Default.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)
@@ -100,10 +98,9 @@ fun RunScreen(vm: MainViewModel, packageName: String) {
                         color = if (status == StepStatus.WAITING) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface,
                     )
                 }
-                if (status == StepStatus.RUNNING && step == Step.DOWNLOAD) {
-                    val p = state.progress
-                    if (p != null) LinearProgressIndicator(progress = { p }, modifier = Modifier.fillMaxWidth())
-                    else LinearProgressIndicator(Modifier.fillMaxWidth())
+                if (status == StepStatus.RUNNING && (step == Step.DOWNLOAD || step == Step.PATCH)) {
+                    val p = state.progress.takeIf { step == Step.DOWNLOAD }
+                    WavyLinearProgress(p)
                 }
             }
         }

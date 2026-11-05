@@ -18,6 +18,11 @@ android {
         versionCode = (System.getenv("VERSION_CODE") ?: "2").toInt()
         versionName = System.getenv("VERSION_NAME") ?: "0.2.0"
         buildConfigField("String", "UPDATE_REPO", "\"EnderMythex/EnderrModded\"")
+
+        ndk {
+            // Mêmes architectures que les binaires aapt2 embarqués.
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        }
     }
 
     val releaseKeystore = System.getenv("KEYSTORE_FILE")?.let { file(it) }?.takeIf { it.exists() }
@@ -39,6 +44,14 @@ android {
             isShrinkResources = false
             // Clé stable fournie par les secrets GitHub (nécessaire aux mises à jour de l'app).
             signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
+        }
+    }
+
+    // libprop_override : relève la limite mémoire du processus de patch (repris de ReVanced Manager).
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
         }
     }
 
