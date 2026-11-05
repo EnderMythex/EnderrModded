@@ -54,5 +54,13 @@ class RunReporter(private val packageName: String) {
     fun step(step: Step, status: StepStatus) = PipelineRegistry.mutate(packageName) {
         it.copy(steps = it.steps + (step to status), progress = if (status == StepStatus.RUNNING) null else it.progress)
     }
+    /** Marque l'étape en échec ainsi que toute étape restée "en cours". */
+    fun fail(step: Step) = PipelineRegistry.mutate(packageName) { state ->
+        state.copy(
+            steps = state.steps.mapValues { (s, status) -> if (s == step || status == StepStatus.RUNNING) StepStatus.FAILED else status },
+            progress = null,
+        )
+    }
+
     fun progress(value: Float?) = PipelineRegistry.mutate(packageName) { it.copy(progress = value) }
 }

@@ -44,7 +44,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import com.endermythex.enderrmodded.MainViewModel
-import com.endermythex.enderrmodded.Route
 import com.endermythex.enderrmodded.core.sources.AppCatalog
 import com.endermythex.enderrmodded.installer.Installer
 import com.endermythex.enderrmodded.pipeline.PipelineRegistry
@@ -72,6 +71,7 @@ fun RunScreen(vm: MainViewModel, packageName: String) {
             subtitle = when {
                 state == null -> "En attente…"
                 state.running -> "Patch automatique en cours"
+                state.browserPage != null -> "Vérification APKMirror • v${state.browserPage.version}"
                 state.error != null -> "Échec"
                 else -> "Terminé • v${state.version}"
             },
@@ -83,7 +83,8 @@ fun RunScreen(vm: MainViewModel, packageName: String) {
             return@Column
         }
 
-        Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        // Avec la vérification APKMirror affichée, on masque les étapes pour lui laisser la place.
+        if (state.browserPage == null || state.running) Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Step.entries.forEach { step ->
                 val status = state.steps[step] ?: StepStatus.WAITING
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -107,7 +108,8 @@ fun RunScreen(vm: MainViewModel, packageName: String) {
             }
         }
 
-        state.error?.let {
+        val browserPage = state.browserPage.takeIf { !state.running }
+        if (browserPage == null) state.error?.let {
             InfoCard { Text(it, color = MaterialTheme.colorScheme.error) }
         }
         if (state.failedPatches.isNotEmpty()) {
@@ -120,10 +122,18 @@ fun RunScreen(vm: MainViewModel, packageName: String) {
             null -> Unit
         }
 
-        TextButton(onClick = { showLogs = !showLogs }, modifier = Modifier.padding(horizontal = 8.dp)) {
-            Text(if (showLogs) "Masquer le journal" else "Afficher le journal (${state.logs.size})")
+        Row(Modifier.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = { showLogs = !showLogs }) {
+                Text(if (showLogs) "Masquer le journal" else "Afficher le journal (${state.logs.size})")
+            }
+            TextButton(onClick = { copyLogs(context, "$name ($packageName) • v${state.version ?: "?"}", state.logs) }) {
+                Text("Copier les logs")
+            }
         }
-        if (showLogs) {
+        if (browserPage != null && !showLogs) {
+            // Vérification APKMirror affichée directement dans l'app.
+            ApkMirrorWebView(browserPage, Modifier.weight(1f)) { file -> vm.autoPatchWithFile(packageName, file) }
+        } else if (showLogs) {
             val listState = rememberLazyListState()
             LaunchedEffect(state.logs.size) { if (state.logs.isNotEmpty()) listState.scrollToItem(state.logs.lastIndex) }
             LazyColumn(
@@ -159,14 +169,8 @@ fun RunScreen(vm: MainViewModel, packageName: String) {
                         OutlinedButton(onClick = { shareApk(context, output) }, modifier = Modifier.weight(1f)) { Text("Partager") }
                     }
                 }
-                state.browserPage != null -> {
-                    val page = state.browserPage!!
-                    Text(
-                        "APKMirror vérifie que tu n'es pas un robot : termine le téléchargement dans le navigateur intégré, " +
-                            "le patch reprendra automatiquement.",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Button(onClick = { vm.open(Route.Browser(page)) }, modifier = Modifier.fillMaxWidth()) { Text("Ouvrir APKMirror") }
+                browserPage != null -> OutlinedButton(onClick = { vm.autoPatch(packageName); vm.back() }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Recommencer")
                 }
                 else -> Button(onClick = { vm.autoPatch(packageName); vm.back() }, modifier = Modifier.fillMaxWidth()) { Text("Réessayer") }
             }

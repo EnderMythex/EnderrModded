@@ -114,17 +114,17 @@ class AutoPatcher(private val context: Context) {
             report.log("Terminé ✔")
             PipelineRegistry.mutate(packageName) { it.copy(running = false) }
         } catch (e: BrowserRequiredException) {
-            report.step(current, StepStatus.FAILED)
+            report.fail(current)
             report.log("APKMirror demande une vérification : termine le téléchargement dans le navigateur intégré.")
             PipelineRegistry.mutate(packageName) {
                 it.copy(running = false, error = "Action requise : télécharge l'APK dans le navigateur", browserPage = e.page)
             }
         } catch (e: kotlinx.coroutines.CancellationException) {
-            report.step(current, StepStatus.FAILED)
+            report.fail(current)
             PipelineRegistry.mutate(packageName) { it.copy(running = false, error = "Annulé") }
             throw e
         } catch (e: Throwable) {
-            report.step(current, StepStatus.FAILED)
+            report.fail(current)
             report.log("✘ ${e.message ?: e}")
             PipelineRegistry.mutate(packageName) { it.copy(running = false, error = e.message ?: e.toString()) }
         } finally {

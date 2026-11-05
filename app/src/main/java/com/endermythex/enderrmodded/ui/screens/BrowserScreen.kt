@@ -8,6 +8,7 @@ import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -21,7 +22,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.foundation.layout.padding
 import com.endermythex.enderrmodded.MainViewModel
 import com.endermythex.enderrmodded.core.Http
 import com.endermythex.enderrmodded.core.sources.AppCatalog
@@ -32,22 +32,20 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * Navigateur intégré limité à APKMirror : l'utilisateur passe la vérification anti-robot du site,
- * puis le téléchargement est intercepté et le patch automatique reprend.
+ * Page APKMirror intégrée : l'utilisateur valide la vérification anti-robot du site (captcha),
+ * le téléchargement est intercepté puis [onDownloaded] reprend le patch automatique.
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun BrowserScreen(vm: MainViewModel, page: ApkMirrorSource.DownloadPage) {
+fun ApkMirrorWebView(page: ApkMirrorSource.DownloadPage, modifier: Modifier = Modifier, onDownloaded: (File) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var progress by remember { mutableStateOf<Float?>(null) }
-    var status by remember { mutableStateOf("Si une vérification s'affiche, valide-la. Le téléchargement démarre ensuite tout seul.") }
+    var progress by remember(page) { mutableStateOf<Float?>(null) }
+    var status by remember(page) { mutableStateOf("Valide la vérification ci-dessous si elle s'affiche : le téléchargement démarre ensuite tout seul.") }
 
-    Column(Modifier.fillMaxSize()) {
-        ScreenHeader("Télécharger ${AppCatalog.nameOf(page.packageName)}", subtitle = "APKMirror • v${page.version}", onBack = { vm.back() })
+    Column(modifier) {
         Text(status, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
         progress?.let { p -> LinearProgressIndicator(progress = { p }, modifier = Modifier.fillMaxWidth()) }
-
         AndroidView(
             modifier = Modifier.weight(1f).fillMaxWidth(),
             factory = { ctx ->
@@ -56,10 +54,10 @@ fun BrowserScreen(vm: MainViewModel, page: ApkMirrorSource.DownloadPage) {
                     settings.domStorageEnabled = true
                     CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
                     webViewClient = object : WebViewClient() {
-                        // On reste sur APKMirror (et ses domaines de téléchargement / vérification).
+                        // On reste sur APKMirror (et le domaine de vérification Cloudflare).
                         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                             val host = request.url.host.orEmpty()
-                            return !(host.endsWith("apkmirror.com") || host.endsWith("cloudflare.com") || host.endsWith("challenges.cloudflare.com"))
+                            return !(host.endsWith("apkmirror.com") || host.endsWith("cloudflare.com"))
                         }
                     }
                     setDownloadListener { url, userAgent, _, _, _ ->
@@ -77,8 +75,8 @@ fun BrowserScreen(vm: MainViewModel, page: ApkMirrorSource.DownloadPage) {
                                         mapOf("Cookie" to cookies, "User-Agent" to userAgent, "Referer" to page.url),
                                     ) { done, total -> if (total > 0) progress = done.toFloat() / total }
                                 }
-                                status = "Téléchargé. Lancement du patch…"
-                                vm.autoPatchWithFile(page.packageName, dest)
+                                status = "Téléchargé. Reprise du patch…"
+                                onDownloaded(dest)
                             } catch (t: Throwable) {
                                 progress = null
                                 status = "Échec du téléchargement : ${t.message}. Réessaie."
@@ -89,5 +87,14 @@ fun BrowserScreen(vm: MainViewModel, page: ApkMirrorSource.DownloadPage) {
                 }
             },
         )
+    }
+}
+
+/** Écran plein (ouvert depuis une notification ou un lien). */
+@Composable
+fun BrowserScreen(vm: MainViewModel, page: ApkMirrorSource.DownloadPage) {
+    Column(Modifier.fillMaxSize()) {
+        ScreenHeader("Télécharger ${AppCatalog.nameOf(page.packageName)}", subtitle = "APKMirror • v${page.version}", onBack = { vm.back() })
+        ApkMirrorWebView(page, Modifier.weight(1f)) { file -> vm.autoPatchWithFile(page.packageName, file) }
     }
 }

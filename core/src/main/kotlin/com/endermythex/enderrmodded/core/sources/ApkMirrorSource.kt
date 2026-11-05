@@ -38,12 +38,26 @@ class ApkMirrorSource : ApkSource {
             val page = runCatching { Http.getString(url, mapOf("Referer" to "$base/")) }
                 .onFailure { errors += "${url.removePrefix(base)} → ${it.message}" }
                 .getOrNull() ?: continue
-            if (page.contains("id=$packageName\"") || page.contains("id=$packageName&")) {
+            val owner = pagePackage(page)
+            if (owner == packageName) {
                 appUrlCache[packageName] = url
                 return url
             }
+            errors += "${url.removePrefix(base)} → ${owner ?: "paquet inconnu"}"
         }
         throw SourceException("Application $packageName introuvable sur APKMirror ${errors.joinToString(prefix = "(", postfix = ")")}")
+    }
+
+    /**
+     * Paquet de l'app décrite par la page : son lien Play Store (classe accent_color), et non ceux
+     * des apps similaires listées sur la même page (ex. TikTok vs TikTok Asie).
+     */
+    internal fun pagePackage(html: String): String? {
+        val patterns = listOf(
+            Regex("""details\?id=([\w.]+)[^"]*"[^>]*class="[^"]*accent_color"""),
+            Regex("""class="[^"]*accent_color[^"]*"[^>]*href="[^"]*details\?id=([\w.]+)"""),
+        )
+        return patterns.firstNotNullOfOrNull { it.find(html)?.groupValues?.get(1) }
     }
 
     override fun versions(packageName: String): List<String> {

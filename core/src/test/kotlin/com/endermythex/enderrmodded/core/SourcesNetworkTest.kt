@@ -45,6 +45,16 @@ class SourcesNetworkTest {
     @Test fun apkMirrorYouTube() = check(ApkMirrorSource(), "com.google.android.youtube")
 
     @Test
+    fun apkMirrorTikTokPages() {
+        if (!enabled) return
+        val source = ApkMirrorSource()
+        val global = source.appUrl("com.zhiliaoapp.musically")
+        val asia = runCatching { source.appUrl("com.ss.android.ugc.trill") }.getOrNull()
+        println("TikTok : $global • TikTok Asie : $asia")
+        assertTrue(global != asia, "Les deux TikTok pointent vers la même page")
+    }
+
+    @Test
     fun revancedApi() {
         if (!enabled) return
         val release = PatchSources.latest(PatchSources.REVANCED_API, prerelease = false)

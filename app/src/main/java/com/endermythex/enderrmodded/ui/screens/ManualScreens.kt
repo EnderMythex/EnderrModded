@@ -140,6 +140,10 @@ fun ManualRunScreen(vm: MainViewModel, manual: ManualViewModel) {
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(if (manual.isPatching) "Patch en cours…" else "Patch terminé", onBack = if (manual.isPatching) null else ({ vm.back(); Unit }))
         if (manual.isPatching) LinearProgressIndicator(Modifier.fillMaxWidth())
+        TextButton(
+            onClick = { copyLogs(context, "Patch manuel ${manual.apk?.packageName.orEmpty()} v${manual.apk?.versionName.orEmpty()}", manual.logs) },
+            modifier = Modifier.padding(horizontal = 8.dp),
+        ) { Text("Copier les logs") }
         LazyColumn(
             state = listState,
             modifier = Modifier.weight(1f).fillMaxWidth().padding(8.dp).background(MaterialTheme.colorScheme.surfaceVariant).padding(8.dp),
