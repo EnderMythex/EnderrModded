@@ -31,7 +31,7 @@ class PatchWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
     override suspend fun doWork(): Result {
         val pkg = inputData.getString(KEY_PACKAGE) ?: return Result.failure()
         val version = inputData.getString(KEY_VERSION)
-        val provided = inputData.getString(KEY_INPUT)?.let(::java.io.File)
+        val provided = inputData.getString(KEY_INPUT)?.let { java.io.File(it) }
         runCatching { setForeground(getForegroundInfo()) }
         val state = AutoPatcher(applicationContext).run(pkg, version, providedApk = provided)
         val name = AppCatalog.nameOf(pkg)
