@@ -2,7 +2,6 @@ package com.endermythex.enderrmodded.core
 
 import com.endermythex.enderrmodded.core.sources.ApkMirrorSource
 import com.endermythex.enderrmodded.core.sources.ApkSource
-import com.endermythex.enderrmodded.core.sources.UptodownSource
 import java.io.File
 import java.nio.file.Files
 import kotlin.test.Test
@@ -35,8 +34,8 @@ class SourcesNetworkTest {
     }
 
     @Test fun apkMirrorYouTubeMusic() = check(ApkMirrorSource(), "com.google.android.apps.youtube.music")
-    @Test fun uptodownYouTubeMusic() = check(UptodownSource(), "com.google.android.apps.youtube.music")
-    @Test fun uptodownYouTube() = check(UptodownSource(), "com.google.android.youtube")
+    
+    @Test fun apkMirrorYouTube() = check(ApkMirrorSource(), "com.google.android.youtube")
 
     @Test
     fun revancedApi() {

@@ -62,6 +62,17 @@ class ApkMirrorSource : ApkSource {
             .sortedWith { a, b -> Versions.compare(b, a) }
     }
 
+    /** Extrait HTML autour des indices de lien final (diagnostic). */
+    private fun snippet(page: Document): String {
+        val html = page.outerHtml()
+        val marks = listOf("download.php", "nofollow", "download-link", "Your download", "will start", "challenge", "cf-")
+        val parts = marks.mapNotNull { m ->
+            val i = html.indexOf(m)
+            if (i < 0) null else "[$m] " + html.substring((i - 200).coerceAtLeast(0), (i + 200).coerceAtMost(html.length)).replace(Regex("\\s+"), " ")
+        }
+        return "title=${page.title()} len=${html.length} " + parts.joinToString(" ||| ")
+    }
+
     /** Liens de téléchargement présents sur une page (diagnostic). */
     private fun links(page: Document): String =
         page.select("a[href*=download], a.btn, a.downloadButton, a[rel=nofollow]").take(10)
@@ -133,7 +144,7 @@ class ApkMirrorSource : ApkSource {
         val fileUrl = downloadPage.select("a#download-link[href], span > a[rel=nofollow][href], a[href*=download.php]")
             .map { it.absUrl("href") }
             .firstOrNull { it.contains("download.php") || it.contains("/wp-content/") || it.contains("key=") }
-            ?: throw SourceException("Lien de fichier introuvable sur APKMirror : ${links(downloadPage)}")
+            ?: throw SourceException("Lien de fichier introuvable sur APKMirror : ${snippet(downloadPage)}")
 
         val file = File(destinationDir, "$packageName-$version.${if (isBundle) "apkm" else "apk"}")
         Http.download(fileUrl, file, mapOf("Referer" to downloadPageUrl), onProgress)
