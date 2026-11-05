@@ -16,7 +16,46 @@ class ApkMirrorSource : ApkSource {
     private val base = "https://www.apkmirror.com"
     private val appUrlCache = HashMap<String, String>()
 
-    private fun get(url: String): Document = Jsoup.parse(Http.getString(url, mapOf("Referer" to "$base/")), url)
+    /** Page parsée ; [Document.location] est l'URL finale après redirections. */
+    private fun get(url: String): Document =
+        Http.getPage(url, mapOf("Referer" to "$base/")).let { (finalUrl, html) -> Jsoup.parse(html, finalUrl) }
+
+    /** Chemin propre à l'app (ex. /apk/tiktok-pte-ltd/tik-tok-including-musical-ly/). */
+    private fun appPath(appUrl: String) = "/apk/" + appUrl.substringAfter("/apk/").trimEnd('/') + "/"
+
+    private fun belongsTo(url: String, appUrl: String) = url.substringAfter("apkmirror.com").startsWith(appPath(appUrl))
+
+    /**
+     * Page de la release [version] de l'app. On la prend dans la liste des publications de l'app :
+     * deviner l'URL ne suffit pas, deux apps peuvent partager le même nom de release
+     * (TikTok et TikTok Asie : "tiktok-36-5-4-release") et APKMirror redirige alors vers l'autre.
+     */
+    private fun findRelease(appUrl: String, version: String, log: (String) -> Unit): Document {
+        val category = appUrl.trimEnd('/').substringAfterLast('/')
+        val versionRegex = Regex("(^|\\s)" + Regex.escape(version) + "(\\s|$)")
+        for (page in 1..40) {
+            val url = if (page == 1) "$base/uploads/?appcategory=$category" else "$base/uploads/page/$page/?appcategory=$category"
+            val doc = runCatching { get(url) }.getOrNull() ?: break
+            val links = doc.select("div.appRow h5.appRowTitle a[href]")
+            if (links.isEmpty()) break
+            val match = links.firstOrNull { a -> belongsTo(a.absUrl("href"), appUrl) && versionRegex.containsMatchIn(a.text()) }
+            if (match != null) return get(match.absUrl("href"))
+            // Liste triée de la plus récente à la plus ancienne : on s'arrête une fois la version dépassée.
+            val versionsOnPage = links.mapNotNull { Regex("\\d+(\\.\\d+)+").find(it.text())?.value }
+            if (versionsOnPage.isNotEmpty() && versionsOnPage.all { Versions.compare(it, version) < 0 }) break
+        }
+        // Repli : URL construite, mais seulement si APKMirror ne redirige pas vers une autre app.
+        val appName = get(appUrl).selectFirst("h1.marginZero")?.text()
+            ?: throw SourceException("Nom de l'app introuvable sur APKMirror")
+        val slug = appName.lowercase().replace(' ', '-').replace(Regex("[^a-z0-9-]"), "")
+        val guess = "${appUrl.trimEnd('/')}/$slug-${version.lowercase().replace(' ', '-').replace('.', '-')}-release/"
+        log("APKMirror : release non trouvée dans la liste, essai de $guess")
+        val doc = runCatching { get(guess) }.getOrElse { throw SourceException("Version $version introuvable sur APKMirror", it) }
+        if (!belongsTo(doc.location(), appUrl)) {
+            throw SourceException("Version $version introuvable sur APKMirror (redirection vers une autre app : ${doc.location()})")
+        }
+        return doc
+    }
 
     /** URL de la page de l'app (ex. https://www.apkmirror.com/apk/google-inc/youtube/). */
     fun appUrl(packageName: String): String {
@@ -103,19 +142,13 @@ class ApkMirrorSource : ApkSource {
     /** Trouve la meilleure variante pour l'appareil et sa page de téléchargement. */
     fun resolve(packageName: String, version: String, abis: List<String>, log: (String) -> Unit): DownloadPage {
         val appUrl = appUrl(packageName)
-        val appPage = get(appUrl)
-        val appName = appPage.selectFirst("h1.marginZero")?.text()
-            ?: throw SourceException("Nom de l'app introuvable sur APKMirror")
-        val slug = appName.lowercase().replace(' ', '-').replace(Regex("[^a-z0-9-]"), "")
-        val releaseUrl = "${appUrl.trimEnd('/')}/$slug-${version.lowercase().replace(' ', '-').replace('.', '-')}-release/"
-        log("APKMirror : $releaseUrl")
-        val release = runCatching { get(releaseUrl) }.getOrElse {
-            throw SourceException("Version $version introuvable sur APKMirror", it)
-        }
+        val release = findRelease(appUrl, version, log)
+        log("APKMirror : ${release.location()}")
 
         val variants = release.select("div.table-row.headerFont").mapNotNull { row ->
             val cells = row.select("div.table-cell")
             val link = cells.firstOrNull()?.selectFirst("a[href]") ?: return@mapNotNull null
+            if (!belongsTo(link.absUrl("href"), appUrl)) return@mapNotNull null
             Variant(
                 url = link.absUrl("href"),
                 isBundle = cells[0].text().contains("BUNDLE", ignoreCase = true),
@@ -146,7 +179,7 @@ class ApkMirrorSource : ApkSource {
 
         val downloadPageUrl = variantPage.select("a.downloadButton[href], a.btn[href*=download]")
             .map { it.absUrl("href") }
-            .firstOrNull { it.contains("/download/") || it.contains("key=") }
+            .firstOrNull { (it.contains("/download/") || it.contains("key=")) && belongsTo(it, appUrl) }
             ?: throw SourceException("Bouton de téléchargement introuvable sur APKMirror : ${links(variantPage)}")
         log("APKMirror : page de téléchargement $downloadPageUrl")
         return DownloadPage(downloadPageUrl, packageName, version, isBundle)

@@ -69,6 +69,10 @@ object Http {
         throw IOException("Trop de redirections : $url")
     }
 
+    /** Contenu de la page et URL finale (après redirections). */
+    fun getPage(url: String, headers: Map<String, String> = emptyMap(), userAgent: String = BROWSER_UA): Pair<String, String> =
+        open(url, headers, userAgent).let { c -> c.url.toString() to c.inputStream.use { it.readBytes().decodeToString() } }
+
     fun getString(url: String, headers: Map<String, String> = emptyMap(), userAgent: String = BROWSER_UA): String =
         open(url, headers, userAgent).let { c -> c.inputStream.use { it.readBytes().decodeToString() } }
 

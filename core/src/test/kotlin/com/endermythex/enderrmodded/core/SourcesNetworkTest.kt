@@ -52,6 +52,10 @@ class SourcesNetworkTest {
         val asia = runCatching { source.appUrl("com.ss.android.ugc.trill") }.getOrNull()
         println("TikTok : $global • TikTok Asie : $asia")
         assertTrue(global != asia, "Les deux TikTok pointent vers la même page")
+        // TikTok et TikTok Asie partagent le nom de release "tiktok-36-5-4-release".
+        val page = source.resolve("com.zhiliaoapp.musically", "36.5.4", abis, ::println)
+        println("TikTok 36.5.4 : ${page.url}")
+        assertTrue(page.url.contains("/tik-tok-including-musical-ly/"), "Mauvaise app : ${page.url}")
     }
 
     @Test
