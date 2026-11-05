@@ -17,7 +17,7 @@ class Settings(context: Context) {
     }.getOrDefault(4096L).toInt()
 
     /** Limites proposées pour le processus de patch, selon la RAM de l'appareil. */
-    val memoryChoices: List<Int> get() = listOf(512, 768, 1024, 1536, 2048, 3072).filter { it <= deviceRamMb / 2 }.ifEmpty { listOf(512) }
+    val memoryChoices: List<Int> get() = listOf(512, 768, 1024, 1536, 2048).filter { it <= deviceRamMb / 2 }.ifEmpty { listOf(512) }
 
     // --- Patchs ---
     var patchesRepo by string("patches_repo", DEFAULT_PATCHES_REPO)
@@ -33,6 +33,7 @@ class Settings(context: Context) {
     // --- Performances ---
     /** Patch dans un processus séparé avec sa propre limite de mémoire (comme ReVanced Manager). */
     var useProcessRuntime by boolean("use_process_runtime", true)
+    // Au-delà de ~2 Go, ART ne peut pas démarrer (tas limité aux 4 premiers Go d'adresses).
     var processMemoryMb by int("process_memory_mb", (deviceRamMb / 4).coerceIn(512, 1536).let { m -> listOf(512, 768, 1024, 1536).last { it <= m } })
 
     // --- Patch & installation ---
@@ -80,6 +81,7 @@ class Settings(context: Context) {
         pref(key, { prefs.getInt(key, default) }) { prefs.edit().putInt(key, it).apply() }
 
     init {
+        if (processMemoryMb > 2048) processMemoryMb = 2048
         // Le dépôt GitHub ReVanced/revanced-patches n'est plus accessible : on passe par l'API officielle.
         if (patchesRepo == "ReVanced/revanced-patches") patchesRepo = DEFAULT_PATCHES_REPO
         // Uptodown protège désormais ses téléchargements par un captcha : source retirée.

@@ -47,11 +47,26 @@ class PatcherEngine(private val context: Context) {
         val packageName = context.packageManager.getPackageArchiveInfo(input.absolutePath, 0)?.packageName
 
         if (settings.useProcessRuntime && packageName != null) {
-            try {
-                val failed = runInProcess(input, patches, packageName, aapt, workDir, output, settings.processMemoryMb, log)
-                return@withLock Result(output, failed)
-            } catch (e: ProcessStartException) {
-                log("⚠ Processus séparé indisponible (${e.message}) : patch dans l'app.")
+            // ART doit loger le tas Java sous 4 Go (références compressées) : une limite trop haute
+            // fait avorter le processus au démarrage. On redescend alors automatiquement.
+            var limit = settings.processMemoryMb
+            while (true) {
+                try {
+                    val failed = runInProcess(input, patches, packageName, aapt, workDir, output, limit, log)
+                    if (limit != settings.processMemoryMb) {
+                        settings.processMemoryMb = limit
+                        log("Limite mémoire ajustée à $limit Mo pour les prochains patchs.")
+                    }
+                    return@withLock Result(output, failed)
+                } catch (e: ProcessStartException) {
+                    val next = listOf(2048, 1536, 1024, 768, 512).firstOrNull { it < limit }
+                    if (next == null) {
+                        log("⚠ Processus séparé indisponible (${e.message}) : patch dans l'app (mémoire limitée par Android).")
+                        break
+                    }
+                    log("⚠ Le processus de patch n'a pas démarré avec $limit Mo (${e.message?.trim()}), nouvel essai avec $next Mo…")
+                    limit = next
+                }
             }
         }
 

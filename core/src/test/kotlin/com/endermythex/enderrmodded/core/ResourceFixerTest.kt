@@ -27,4 +27,17 @@ class ResourceFixerTest {
         assertTrue("frame.9.png" in names && "data.png" in names)
         res.deleteRecursively()
     }
+
+    @Test
+    fun removesUnresolvedManifestReferences() {
+        val manifest = Files.createTempFile("AndroidManifest", ".xml").toFile()
+        manifest.writeText(
+            """<activity android:name="a.B" android:theme="@1427046400" android:exported="false"/>
+              |<activity android:name="a.C" android:theme="@style/Ok" android:label="@string/x"/>""".trimMargin(),
+        )
+        assertEquals(1, ResourceFixer.fixUnresolvedManifestReferences(manifest))
+        val text = manifest.readText()
+        assertTrue("@1427046400" !in text && "android:exported=\"false\"" in text && "@style/Ok" in text)
+        manifest.delete()
+    }
 }

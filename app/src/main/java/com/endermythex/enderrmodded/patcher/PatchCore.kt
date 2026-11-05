@@ -65,6 +65,8 @@ object PatchCore {
 
             // Images mal nommées (WebP en .png…) que aapt2 refuserait à la recompilation.
             ResourceFixer.fixMismatchedImages(File(workDir, "tmp/apk/res"), log)
+            // Références vers des modules dynamiques absents (ex. TikTok), refusées par aapt2 link.
+            ResourceFixer.fixUnresolvedManifestReferences(File(workDir, "tmp/apk/AndroidManifest.xml"), log)
 
             log("Écriture de l'APK patché…")
             val unsigned = File(workDir, "unsigned.apk")

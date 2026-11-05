@@ -60,4 +60,28 @@ object ResourceFixer {
         if (fixed > 0) log("$fixed image(s) au format incorrect corrigée(s) (ex. WebP nommé .png)")
         return fixed
     }
+
+    private val rawReference = Regex("""\s+[\w.:]+="@(\d+)"""")
+
+    /**
+     * Retire du manifeste décodé les attributs pointant vers une ressource non résolue (ex. "@1427046400").
+     *
+     * apktool écrit ainsi les références vers des modules dynamiques absents de l'APK de base
+     * (ex. TikTok : paquet 0x55 = df_live_cast). aapt2 link refuse ces valeurs ; les composants concernés
+     * appartiennent à des modules non installés, retirer l'attribut est donc sans effet sur l'app.
+     * @return le nombre d'attributs retirés.
+     */
+    fun fixUnresolvedManifestReferences(manifest: File, log: (String) -> Unit = {}): Int {
+        if (!manifest.isFile) return 0
+        val text = manifest.readText()
+        var removed = 0
+        val fixed = rawReference.replace(text) { match ->
+            removed++
+            val id = match.groupValues[1].toLongOrNull()
+            log("Manifeste : attribut non résolu retiré (${match.value.trim().substringBefore('=')} → 0x${id?.toString(16) ?: "?"})")
+            ""
+        }
+        if (removed > 0) manifest.writeText(fixed)
+        return removed
+    }
 }
