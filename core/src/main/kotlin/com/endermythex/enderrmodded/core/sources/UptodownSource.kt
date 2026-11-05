@@ -69,7 +69,7 @@ class UptodownSource : ApkSource {
         )
         for (selector in candidates) {
             val value = page.select(selector).map { it.attr("data-url") }
-                .firstOrNull { it.isNotBlank() && !it.startsWith("http") && !it.startsWith("/") }
+                .firstOrNull { it.length > 20 && !it.startsWith("http") && !it.startsWith("/") }
             if (value != null) return value
         }
         return null
@@ -77,8 +77,9 @@ class UptodownSource : ApkSource {
 
     /** Résumé des éléments utiles de la page, pour diagnostiquer un changement du site. */
     private fun describe(page: Document): String =
-        page.select("[data-url], [id*=download], .button").take(8).joinToString(" | ") { el ->
-            "<${el.tagName()} id=${el.id()} class=${el.className()} data-url=${el.attr("data-url").take(40)}>"
+        page.select("[data-url], [id*=download], [data-file-id], .button, a[href*=dw.uptodown]").take(12).joinToString(" | ") { el ->
+            "<${el.tagName()} id=${el.id()} class=${el.className()} " +
+                el.attributes().filter { it.key.startsWith("data-") || it.key == "href" }.joinToString(" ") { "${it.key}=${it.value.take(60)}" } + ">"
         }.ifBlank { page.title() }
 
     override fun download(
@@ -124,6 +125,7 @@ class UptodownSource : ApkSource {
             page = get("$base/download/${chosen.fileId}-x")
         }
 
+        log("Uptodown : page ${page.location()} • ${describe(page)}")
         val dataUrl = findDataUrl(page)
             ?: throw SourceException("Lien de téléchargement introuvable sur Uptodown (${page.location()}) : ${describe(page)}")
         val file = File(destinationDir, "$packageName-$version.${if (isBundle) "xapk" else "apk"}")

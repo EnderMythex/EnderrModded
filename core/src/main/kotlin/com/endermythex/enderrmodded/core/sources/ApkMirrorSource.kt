@@ -62,6 +62,12 @@ class ApkMirrorSource : ApkSource {
             .sortedWith { a, b -> Versions.compare(b, a) }
     }
 
+    /** Liens de téléchargement présents sur une page (diagnostic). */
+    private fun links(page: Document): String =
+        page.select("a[href*=download], a.btn, a.downloadButton, a[rel=nofollow]").take(10)
+            .joinToString(" | ") { "<a class=${it.className()} id=${it.id()} href=${it.attr("href").take(90)}>" }
+            .ifBlank { page.title() }
+
     override fun latestVersion(packageName: String): String? = runCatching { versions(packageName).firstOrNull() }.getOrNull()
 
     private data class Variant(val url: String, val isBundle: Boolean, val arch: String, val dpi: String)
@@ -118,11 +124,16 @@ class ApkMirrorSource : ApkSource {
             isBundle = chosen.isBundle
         }
 
-        val downloadPageUrl = variantPage.selectFirst("a.downloadButton[href], a.btn[href*=download]")?.absUrl("href")
-            ?: throw SourceException("Bouton de téléchargement introuvable sur APKMirror")
+        val downloadPageUrl = variantPage.select("a.downloadButton[href], a.btn[href*=download]")
+            .map { it.absUrl("href") }
+            .firstOrNull { it.contains("/download/") || it.contains("key=") }
+            ?: throw SourceException("Bouton de téléchargement introuvable sur APKMirror : ${links(variantPage)}")
+        log("APKMirror : page de téléchargement $downloadPageUrl")
         val downloadPage = get(downloadPageUrl)
-        val fileUrl = downloadPage.selectFirst("a#download-link[href], span > a[rel=nofollow][href]")?.absUrl("href")
-            ?: throw SourceException("Lien de fichier introuvable sur APKMirror")
+        val fileUrl = downloadPage.select("a#download-link[href], span > a[rel=nofollow][href], a[href*=download.php]")
+            .map { it.absUrl("href") }
+            .firstOrNull { it.contains("download.php") || it.contains("/wp-content/") || it.contains("key=") }
+            ?: throw SourceException("Lien de fichier introuvable sur APKMirror : ${links(downloadPage)}")
 
         val file = File(destinationDir, "$packageName-$version.${if (isBundle) "apkm" else "apk"}")
         Http.download(fileUrl, file, mapOf("Referer" to downloadPageUrl), onProgress)
