@@ -5,6 +5,9 @@ import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -106,8 +109,19 @@ fun RunScreen(vm: MainViewModel, packageName: String) {
         }
 
         val browserPage = state.browserPage.takeIf { !state.running }
+        // Statistiques RAM pendant l'étape de patch.
+        if (state.running && state.steps[Step.PATCH] == StepStatus.RUNNING) MemoryCard()
+
         if (browserPage == null) state.error?.let {
-            InfoCard { Text(it, color = MaterialTheme.colorScheme.error) }
+            InfoCard {
+                // Défilable : les erreurs d'aapt2 peuvent être longues.
+                Text(
+                    it,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.heightIn(max = 240.dp).verticalScroll(rememberScrollState()),
+                )
+            }
         }
         if (state.failedPatches.isNotEmpty()) {
             InfoCard { Text("Patchs en échec : ${state.failedPatches.joinToString()}", color = MaterialTheme.colorScheme.error) }

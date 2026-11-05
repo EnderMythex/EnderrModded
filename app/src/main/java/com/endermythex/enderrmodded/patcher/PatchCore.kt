@@ -80,12 +80,25 @@ object PatchCore {
         } catch (t: Throwable) {
             handler.summary()
             // Les erreurs d'aapt2 sont noyées dans le journal : on les remonte dans le message d'erreur.
-            val details = handler.errorLines().takeIf { it.isNotEmpty() }?.joinToString("\n", prefix = "\nDétails :\n")
-            if (details != null && t !is InterruptedException) throw PatchFailure((t.message ?: t.toString()) + details, t)
-            throw t
+            if (t is InterruptedException) throw t
+            val errors = handler.errorLines().filter { Regex("(?i)error").containsMatchIn(it) }.ifEmpty { handler.errorLines() }
+            throw PatchFailure(describe(t, errors), t)
         } finally {
             rootLogger.removeHandler(handler)
             workDir.deleteRecursively()
+        }
+    }
+
+    /** Message lisible : erreurs d'aapt2 d'abord, commande raccourcie ensuite. */
+    private fun describe(t: Throwable, errors: List<String>): String {
+        val message = t.message ?: t.toString()
+        val aaptStep = Regex("libaapt2\\.so, (\\w+)").find(message)?.groupValues?.get(1)
+        val summary = if (aaptStep != null) {
+            "aapt2 a échoué à l'étape « $aaptStep » des ressources (${Regex("exit code = \\d+").find(message)?.value ?: "erreur"})."
+        } else message.take(400)
+        return buildString {
+            append(summary)
+            if (errors.isNotEmpty()) append("\n\nErreurs :\n").append(errors.joinToString("\n") { it.substringAfter("/tmp/apk/") })
         }
     }
 
@@ -109,7 +122,7 @@ object PatchCore {
             ) {
                 synchronized(errors) {
                     errors.addLast(message)
-                    while (errors.size > 15) errors.removeFirst()
+                    while (errors.size > 25) errors.removeFirst()
                 }
             }
             val prefix = when {

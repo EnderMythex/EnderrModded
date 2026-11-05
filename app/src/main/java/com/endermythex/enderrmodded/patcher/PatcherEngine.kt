@@ -10,7 +10,11 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.Executors
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -35,6 +39,7 @@ class PatcherEngine(private val context: Context) {
         outputName: String = "patched.apk",
         log: (String) -> Unit,
     ): Result = lock.withLock {
+        PatcherStats.reset()
         val aapt = Aapt.binary(context) ?: error("aapt2 introuvable : l'architecture de cet appareil n'est pas supportée")
         val output = File(outputDir, outputName)
         val workDir = File(context.cacheDir, "patcher/${outputName.removeSuffix(".apk")}")
@@ -50,10 +55,31 @@ class PatcherEngine(private val context: Context) {
             }
         }
 
-        withContext(Dispatchers.Default) {
-            val job = currentCoroutineContext()
-            val failed = PatchCore.run(input, patches, aapt, frameworkDir, workDir, output, keystore, log) { job.ensureActive() }
-            Result(output, failed)
+        // Dans l'app : thread dédié à priorité basse + relevé mémoire.
+        val executor = Executors.newSingleThreadExecutor { r ->
+            Thread { PatcherStats.lowerCurrentThreadPriority(); r.run() }.apply { name = "patcher" }
+        }
+        try {
+            coroutineScope {
+                val sampler = launch {
+                    val rt = Runtime.getRuntime()
+                    while (true) {
+                        PatcherStats.update(((rt.totalMemory() - rt.freeMemory()) / (1024 * 1024)).toInt(), (rt.maxMemory() / (1024 * 1024)).toInt(), false)
+                        delay(1000)
+                    }
+                }
+                try {
+                    withContext(executor.asCoroutineDispatcher()) {
+                        val job = currentCoroutineContext()
+                        val failed = PatchCore.run(input, patches, aapt, frameworkDir, workDir, output, keystore, log) { job.ensureActive() }
+                        Result(output, failed)
+                    }
+                } finally {
+                    sampler.cancel()
+                }
+            }
+        } finally {
+            executor.shutdown()
         }
     }
 
@@ -125,6 +151,8 @@ class PatcherEngine(private val context: Context) {
                         "LOG" -> log(payload)
                         "DONE" -> failed = JSONObject(payload).getJSONArray("failed").let { a -> (0 until a.length()).map { a.getString(it) } }
                         "FAIL" -> failure = payload
+                        "MEM" -> payload.split(',').mapNotNull { it.toIntOrNull() }.takeIf { it.size == 2 }
+                            ?.let { (used, max) -> PatcherStats.update(used, max, separateProcess = true) }
                     }
                 }
             }

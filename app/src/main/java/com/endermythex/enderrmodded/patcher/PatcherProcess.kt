@@ -23,6 +23,15 @@ object PatcherProcess {
     @JvmStatic
     fun main(args: Array<String>) {
         send("START")
+        // Priorité basse : le patch utilise tous les cœurs, l'interface doit rester fluide.
+        PatcherStats.lowerCurrentThreadPriority()
+        Thread {
+            val rt = Runtime.getRuntime()
+            while (true) {
+                send("MEM", "${(rt.totalMemory() - rt.freeMemory()) / (1024 * 1024)},${rt.maxMemory() / (1024 * 1024)}")
+                Thread.sleep(1000)
+            }
+        }.apply { isDaemon = true }.start()
         try {
             val p = JSONObject(File(args[0]).readText())
             send("LOG", "Processus de patch séparé • mémoire max ${Runtime.getRuntime().maxMemory() / (1024 * 1024)} Mo")
