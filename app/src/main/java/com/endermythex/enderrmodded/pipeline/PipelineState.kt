@@ -4,6 +4,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import com.endermythex.enderrmodded.core.sources.ApkMirrorSource
 import java.io.File
 
 enum class Step(val label: String) {
@@ -28,6 +29,8 @@ data class RunState(
     val outputApk: File? = null,
     val version: String? = null,
     val failedPatches: List<String> = emptyList(),
+    /** Téléchargement à terminer dans le navigateur intégré (vérification anti-robot du site). */
+    val browserPage: ApkMirrorSource.DownloadPage? = null,
 ) {
     val finishedOk get() = !running && error == null && outputApk != null
 }

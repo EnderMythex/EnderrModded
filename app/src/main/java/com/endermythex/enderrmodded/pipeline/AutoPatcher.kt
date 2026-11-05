@@ -2,6 +2,7 @@ package com.endermythex.enderrmodded.pipeline
 
 import android.content.Context
 import com.endermythex.enderrmodded.EnderrApp
+import com.endermythex.enderrmodded.core.sources.BrowserRequiredException
 import com.endermythex.enderrmodded.data.PatchedApp
 import com.endermythex.enderrmodded.installer.Installer
 import com.endermythex.enderrmodded.patcher.PatcherEngine
@@ -24,7 +25,12 @@ class AutoPatcher(private val context: Context) {
      * @param forcedVersion version imposée par l'utilisateur (sinon recommandée/dernière).
      * @param install installer automatiquement à la fin.
      */
-    suspend fun run(packageName: String, forcedVersion: String? = null, install: Boolean = settings.autoInstall): RunState {
+    suspend fun run(
+        packageName: String,
+        forcedVersion: String? = null,
+        install: Boolean = settings.autoInstall,
+        providedApk: File? = null,
+    ): RunState {
         val report = RunReporter(packageName)
         PipelineRegistry.start(packageName)
         val workDir = File(context.cacheDir, "auto/$packageName").apply { deleteRecursively(); mkdirs() }
@@ -66,7 +72,10 @@ class AutoPatcher(private val context: Context) {
 
             // 3-5. Récupération, vérification, fusion
             current = Step.DOWNLOAD
-            val (input, version) = withContext(Dispatchers.IO) { provider.obtain(packageName, target, workDir, report) }
+            val (input, version) = withContext(Dispatchers.IO) {
+                if (providedApk != null) provider.prepareProvided(packageName, providedApk, workDir, report)
+                else provider.obtain(packageName, target, workDir, report)
+            }
             PipelineRegistry.mutate(packageName) { it.copy(version = version) }
 
             // 6. Patch + signature
@@ -104,6 +113,12 @@ class AutoPatcher(private val context: Context) {
             }
             report.log("Terminé ✔")
             PipelineRegistry.mutate(packageName) { it.copy(running = false) }
+        } catch (e: BrowserRequiredException) {
+            report.step(current, StepStatus.FAILED)
+            report.log("APKMirror demande une vérification : termine le téléchargement dans le navigateur intégré.")
+            PipelineRegistry.mutate(packageName) {
+                it.copy(running = false, error = "Action requise : télécharge l'APK dans le navigateur", browserPage = e.page)
+            }
         } catch (e: kotlinx.coroutines.CancellationException) {
             report.step(current, StepStatus.FAILED)
             PipelineRegistry.mutate(packageName) { it.copy(running = false, error = "Annulé") }

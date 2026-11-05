@@ -22,7 +22,14 @@ class SourcesNetworkTest {
         println("Versions : ${versions.take(5)}")
         assertTrue(versions.isNotEmpty(), "Aucune version trouvée")
         val dir = Files.createTempDirectory("dl").toFile()
-        val result = source.download(packageName, versions.first(), dir, abis, ::println) { _, _ -> }
+        val result = try {
+            source.download(packageName, versions.first(), dir, abis, ::println) { _, _ -> }
+        } catch (e: com.endermythex.enderrmodded.core.sources.BrowserRequiredException) {
+            // Comportement attendu : la page finale exige un vrai navigateur (fait dans l'app).
+            println("Navigateur requis : ${e.page}")
+            assertTrue(e.page.url.contains("/download/"))
+            return
+        }
         println("Fichier : ${result.file.name} ${result.file.length() / 1024} Ko (bundle=${result.isBundle})")
         assertTrue(result.file.length() > 100_000, "Fichier trop petit")
         if (result.isBundle || SplitMerger.isBundle(result.file)) {

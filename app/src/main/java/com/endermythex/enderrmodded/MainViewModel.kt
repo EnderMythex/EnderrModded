@@ -11,6 +11,7 @@ import androidx.lifecycle.viewModelScope
 import com.endermythex.enderrmodded.core.GitHub
 import com.endermythex.enderrmodded.core.Versions
 import com.endermythex.enderrmodded.core.sources.AppCatalog
+import com.endermythex.enderrmodded.core.sources.ApkMirrorSource
 import com.endermythex.enderrmodded.data.PatchedApp
 import com.endermythex.enderrmodded.patcher.PatcherEngine
 import com.endermythex.enderrmodded.pipeline.ApkProvider
@@ -31,6 +32,7 @@ sealed interface Route {
     data object ManualPicker : Route
     data object ManualPatches : Route
     data object ManualRun : Route
+    data class Browser(val page: ApkMirrorSource.DownloadPage) : Route
 }
 
 /** Une app ciblée par le bundle de patchs. */
@@ -167,6 +169,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun autoPatch(packageName: String, version: String? = null) {
         PatchWorker.enqueue(getApplication(), packageName, version)
         open(Route.Run(packageName))
+    }
+
+    /** Reprend le patch auto avec un APK téléchargé dans le navigateur intégré. */
+    fun autoPatchWithFile(packageName: String, file: File) {
+        PatchWorker.enqueue(getApplication(), packageName, input = file)
+        // Remplace l'écran navigateur par l'écran de progression.
+        stack = stack.filterNot { it is Route.Browser || (it is Route.Run && it.packageName == packageName) } + Route.Run(packageName)
     }
 
     fun cancelPatch(packageName: String) = PatchWorker.cancel(getApplication(), packageName)

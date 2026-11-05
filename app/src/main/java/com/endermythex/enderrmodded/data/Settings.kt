@@ -17,7 +17,7 @@ class Settings(context: Context) {
     var patchesTag by string("patches_tag", "")
 
     // --- Téléchargement ---
-    var sourceOrder by string("source_order", "device,apkmirror,uptodown")
+    var sourceOrder by string("source_order", "device,apkmirror")
     var verifySignatures by boolean("verify_signatures", true)
     var useLatestVersion by boolean("use_latest_version", false)
 
@@ -41,7 +41,7 @@ class Settings(context: Context) {
     val sources: List<String> get() = sourceOrder.split(',').map { it.trim() }.filter { it.isNotEmpty() }
 
     fun setSourceEnabled(id: String, enabled: Boolean) {
-        val all = listOf("device", "apkmirror", "uptodown")
+        val all = listOf("device", "apkmirror")
         val current = sources.toMutableList()
         if (enabled && id !in current) current += id else if (!enabled) current -= id
         sourceOrder = all.filter { it in current }.joinToString(",")
@@ -68,6 +68,8 @@ class Settings(context: Context) {
     init {
         // Le dépôt GitHub ReVanced/revanced-patches n'est plus accessible : on passe par l'API officielle.
         if (patchesRepo == "ReVanced/revanced-patches") patchesRepo = DEFAULT_PATCHES_REPO
+        // Uptodown protège désormais ses téléchargements par un captcha : source retirée.
+        if ("uptodown" in sourceOrder) sourceOrder = sources.filter { it != "uptodown" }.joinToString(",")
     }
 
     companion object {

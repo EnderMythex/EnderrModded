@@ -6,7 +6,7 @@ import android.os.Build
 import com.endermythex.enderrmodded.core.SplitMerger
 import com.endermythex.enderrmodded.core.sources.ApkMirrorSource
 import com.endermythex.enderrmodded.core.sources.ApkSource
-import com.endermythex.enderrmodded.core.sources.UptodownSource
+import com.endermythex.enderrmodded.core.sources.BrowserRequiredException
 import com.endermythex.enderrmodded.data.PatchedAppsStore
 import com.endermythex.enderrmodded.data.Settings
 import java.io.File
@@ -21,7 +21,7 @@ class ApkProvider(
     private val store: PatchedAppsStore,
 ) {
     private val pm: PackageManager = context.packageManager
-    private val remoteSources: Map<String, ApkSource> = listOf(ApkMirrorSource(), UptodownSource()).associateBy { it.id }
+    private val remoteSources: Map<String, ApkSource> = listOf(ApkMirrorSource()).associateBy { it.id }
 
     data class Installed(val versionName: String?, val apks: List<File>, val isOriginal: Boolean)
 
@@ -79,6 +79,8 @@ class ApkProvider(
                 }
             } catch (e: SignatureMismatchException) {
                 throw e // Jamais de repli silencieux en cas de signature suspecte.
+            } catch (e: BrowserRequiredException) {
+                throw e // L'utilisateur doit terminer le téléchargement dans le navigateur.
             } catch (e: Exception) {
                 val msg = "$id : ${e.message ?: e}"
                 errors += msg
@@ -120,9 +122,22 @@ class ApkProvider(
         return output to installedVersion
     }
 
+    /** Prépare un fichier déjà téléchargé (navigateur intégré) : vérification + fusion. */
+    fun prepareProvided(packageName: String, file: File, workDir: File, report: RunReporter): Pair<File, String> {
+        workDir.mkdirs()
+        val local = File(workDir, "provided-" + file.name)
+        file.copyTo(local, overwrite = true)
+        file.delete()
+        report.step(Step.DOWNLOAD, StepStatus.DONE)
+        report.log("Fichier téléchargé via le navigateur : ${local.name} (${local.length() / 1024 / 1024} Mo)")
+        val apk = prepare(packageName, null, local, workDir, report, verify = true)
+        val version = pm.getPackageArchiveInfo(apk.absolutePath, 0)?.versionName ?: "?"
+        return apk to version
+    }
+
     private fun prepare(
         packageName: String,
-        version: String,
+        version: String?,
         file: File,
         workDir: File,
         report: RunReporter,
@@ -141,7 +156,7 @@ class ApkProvider(
         val info = pm.getPackageArchiveInfo(baseApk.absolutePath, 0)
             ?: throw IllegalStateException("APK illisible ou corrompu")
         check(info.packageName == packageName) { "Paquet inattendu : ${info.packageName} au lieu de $packageName" }
-        if (info.versionName != version) report.log("⚠ Version lue : ${info.versionName} (attendue $version)")
+        if (version != null && info.versionName != version) report.log("⚠ Version lue : ${info.versionName} (attendue $version)")
         if (verify && settings.verifySignatures) verifySignature(packageName, baseApk, report)
         else report.log("Vérification de signature désactivée")
         report.step(Step.VERIFY, StepStatus.DONE)

@@ -5,7 +5,7 @@ import java.io.File
 /** Résultat d'un téléchargement : APK simple ou bundle (APK scindés à fusionner). */
 data class DownloadedApk(val file: File, val version: String, val isBundle: Boolean, val origin: String)
 
-/** Une source d'APK téléchargeable (APKMirror, Uptodown, …). */
+/** Une source d'APK téléchargeable (APKMirror, …). */
 interface ApkSource {
     val id: String
     val displayName: String

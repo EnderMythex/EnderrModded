@@ -31,11 +31,14 @@ class PatchWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
     override suspend fun doWork(): Result {
         val pkg = inputData.getString(KEY_PACKAGE) ?: return Result.failure()
         val version = inputData.getString(KEY_VERSION)
+        val provided = inputData.getString(KEY_INPUT)?.let(::java.io.File)
         runCatching { setForeground(getForegroundInfo()) }
-        val state = AutoPatcher(applicationContext).run(pkg, version)
+        val state = AutoPatcher(applicationContext).run(pkg, version, providedApk = provided)
         val name = AppCatalog.nameOf(pkg)
         if (!Installer.appInForeground) {
-            if (state.finishedOk) {
+            if (state.browserPage != null) {
+                Notifications.update(applicationContext, pkg.hashCode(), "$name : action requise", "Ouvre EnderrModded pour terminer le téléchargement sur APKMirror.")
+            } else if (state.finishedOk) {
                 Notifications.update(applicationContext, pkg.hashCode(), "$name patché", "Version ${state.version} prête.")
             } else {
                 Notifications.update(applicationContext, pkg.hashCode(), "Échec du patch de $name", state.error ?: "Erreur inconnue")
@@ -47,17 +50,18 @@ class PatchWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
     companion object {
         private const val KEY_PACKAGE = "package"
         private const val KEY_VERSION = "version"
+        private const val KEY_INPUT = "input"
         private const val NOTIFICATION_ID = 42
 
         fun workName(packageName: String) = "patch-$packageName"
 
-        fun enqueue(context: Context, packageName: String, version: String? = null) {
+        fun enqueue(context: Context, packageName: String, version: String? = null, input: java.io.File? = null) {
             val request = OneTimeWorkRequestBuilder<PatchWorker>()
-                .setInputData(workDataOf(KEY_PACKAGE to packageName, KEY_VERSION to version))
+                .setInputData(workDataOf(KEY_PACKAGE to packageName, KEY_VERSION to version, KEY_INPUT to input?.absolutePath))
                 .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
                 .addTag("patch")
                 .build()
-            WorkManager.getInstance(context).enqueueUniqueWork(workName(packageName), ExistingWorkPolicy.KEEP, request)
+            WorkManager.getInstance(context).enqueueUniqueWork(workName(packageName), ExistingWorkPolicy.REPLACE, request)
         }
 
         fun cancel(context: Context, packageName: String) =

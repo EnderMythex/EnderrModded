@@ -59,7 +59,7 @@ class ApkMirrorSource : ApkSource {
             .filter { v -> titles.none { t -> t.contains(v) && Regex("(?i)\\b(beta|alpha)\\b").containsMatchIn(t) } }
             .filterNot { Regex("(?i)(beta|alpha)").containsMatchIn(it) }
             .distinct()
-            .sortedWith { a, b -> Versions.compare(b, a) }
+            .sortedWith(compareBy<String> { if (Regex("^[0-9.]+$").matches(it)) 0 else 1 }.thenComparator { a, b -> Versions.compare(b, a) })
     }
 
     /** Extrait HTML autour des indices de lien final (diagnostic). */
@@ -83,20 +83,17 @@ class ApkMirrorSource : ApkSource {
 
     private data class Variant(val url: String, val isBundle: Boolean, val arch: String, val dpi: String)
 
-    override fun download(
-        packageName: String,
-        version: String,
-        destinationDir: File,
-        abis: List<String>,
-        log: (String) -> Unit,
-        onProgress: (Long, Long) -> Unit,
-    ): DownloadedApk {
+    /** Page de téléchargement finale d'une variante (protégée par Cloudflare). */
+    data class DownloadPage(val url: String, val packageName: String, val version: String, val isBundle: Boolean)
+
+    /** Trouve la meilleure variante pour l'appareil et sa page de téléchargement. */
+    fun resolve(packageName: String, version: String, abis: List<String>, log: (String) -> Unit): DownloadPage {
         val appUrl = appUrl(packageName)
         val appPage = get(appUrl)
         val appName = appPage.selectFirst("h1.marginZero")?.text()
             ?: throw SourceException("Nom de l'app introuvable sur APKMirror")
         val slug = appName.lowercase().replace(' ', '-').replace(Regex("[^a-z0-9-]"), "")
-        val releaseUrl = "${appUrl.trimEnd('/')}/$slug-${version.replace(' ', '-').replace('.', '-')}-release/"
+        val releaseUrl = "${appUrl.trimEnd('/')}/$slug-${version.lowercase().replace(' ', '-').replace('.', '-')}-release/"
         log("APKMirror : $releaseUrl")
         val release = runCatching { get(releaseUrl) }.getOrElse {
             throw SourceException("Version $version introuvable sur APKMirror", it)
@@ -105,10 +102,9 @@ class ApkMirrorSource : ApkSource {
         val variants = release.select("div.table-row.headerFont").mapNotNull { row ->
             val cells = row.select("div.table-cell")
             val link = cells.firstOrNull()?.selectFirst("a[href]") ?: return@mapNotNull null
-            val isBundle = cells[0].text().contains("BUNDLE", ignoreCase = true)
             Variant(
                 url = link.absUrl("href"),
-                isBundle = isBundle,
+                isBundle = cells[0].text().contains("BUNDLE", ignoreCase = true),
                 arch = cells.getOrNull(1)?.text().orEmpty(),
                 dpi = cells.getOrNull(3)?.text().orEmpty(),
             )
@@ -117,12 +113,11 @@ class ApkMirrorSource : ApkSource {
         val variantPage: Document
         val isBundle: Boolean
         if (variants.isEmpty()) {
-            // Une seule variante : la page de release est directement la page de téléchargement.
+            // Une seule variante : la page de release est directement la page de la variante.
             variantPage = release
             isBundle = release.text().contains("APK bundle", ignoreCase = true)
         } else {
-            val compatible = variants.filter { Abis.matches(it.arch, abis) }
-            val chosen = compatible
+            val chosen = variants.filter { Abis.matches(it.arch, abis) }
                 .sortedWith(
                     compareBy<Variant> { it.isBundle } // APK simple de préférence
                         .thenBy { if (it.dpi.contains("nodpi", true) || it.dpi.contains("anydpi", true)) 0 else 1 }
@@ -140,14 +135,33 @@ class ApkMirrorSource : ApkSource {
             .firstOrNull { it.contains("/download/") || it.contains("key=") }
             ?: throw SourceException("Bouton de téléchargement introuvable sur APKMirror : ${links(variantPage)}")
         log("APKMirror : page de téléchargement $downloadPageUrl")
-        val downloadPage = get(downloadPageUrl)
+        return DownloadPage(downloadPageUrl, packageName, version, isBundle)
+    }
+
+    override fun download(
+        packageName: String,
+        version: String,
+        destinationDir: File,
+        abis: List<String>,
+        log: (String) -> Unit,
+        onProgress: (Long, Long) -> Unit,
+    ): DownloadedApk {
+        val page = resolve(packageName, version, abis, log)
+        val downloadPage = get(page.url)
         val fileUrl = downloadPage.select("a#download-link[href], span > a[rel=nofollow][href], a[href*=download.php]")
             .map { it.absUrl("href") }
-            .firstOrNull { it.contains("download.php") || it.contains("/wp-content/") || it.contains("key=") }
-            ?: throw SourceException("Lien de fichier introuvable sur APKMirror : ${snippet(downloadPage)}")
-
-        val file = File(destinationDir, "$packageName-$version.${if (isBundle) "apkm" else "apk"}")
-        Http.download(fileUrl, file, mapOf("Referer" to downloadPageUrl), onProgress)
-        return DownloadedApk(file, version, isBundle, displayName)
+            .firstOrNull { it.contains("download.php") || it.contains("/wp-content/") }
+        if (fileUrl == null) {
+            // Le lien final n'est délivré qu'après la vérification Cloudflare d'un vrai navigateur.
+            if (downloadPage.outerHtml().contains("challenge-platform")) throw BrowserRequiredException(page)
+            throw SourceException("Lien de fichier introuvable sur APKMirror : ${snippet(downloadPage)}")
+        }
+        val file = File(destinationDir, "$packageName-$version.${if (page.isBundle) "apkm" else "apk"}")
+        Http.download(fileUrl, file, mapOf("Referer" to page.url), onProgress)
+        return DownloadedApk(file, version, page.isBundle, displayName)
     }
 }
+
+/** Le téléchargement doit être terminé dans un navigateur (vérification anti-robot du site). */
+class BrowserRequiredException(val page: ApkMirrorSource.DownloadPage) :
+    Exception("APKMirror demande une vérification dans le navigateur")

@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import com.endermythex.enderrmodded.installer.Installer
 import com.endermythex.enderrmodded.ui.screens.AppDetailScreen
 import com.endermythex.enderrmodded.ui.screens.AppsScreen
+import com.endermythex.enderrmodded.ui.screens.BrowserScreen
 import com.endermythex.enderrmodded.ui.screens.ManualHomeScreen
 import com.endermythex.enderrmodded.ui.screens.ManualPatchesScreen
 import com.endermythex.enderrmodded.ui.screens.ManualPickerScreen
@@ -91,6 +92,7 @@ class MainActivity : ComponentActivity() {
                             Route.ManualPicker -> ManualPickerScreen(vm, manual)
                             Route.ManualPatches -> ManualPatchesScreen(vm, manual)
                             Route.ManualRun -> ManualRunScreen(vm, manual)
+                            is Route.Browser -> BrowserScreen(vm, route.page)
                         }
                     }
                 }

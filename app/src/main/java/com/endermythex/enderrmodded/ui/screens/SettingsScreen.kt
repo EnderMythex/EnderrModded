@@ -49,8 +49,11 @@ fun SettingsScreen(vm: MainViewModel) {
 
         SectionTitle("Téléchargement des APK")
         SwitchRow("App installée sur l'appareil", "Utilise l'app du Play Store si la version correspond (le plus sûr)", "device" in s.sources) { s.setSourceEnabled("device", it) }
-        SwitchRow("APKMirror", "APK vérifiés et signés par les développeurs officiels", "apkmirror" in s.sources) { s.setSourceEnabled("apkmirror", it) }
-        SwitchRow("Uptodown", "Source de secours", "uptodown" in s.sources) { s.setSourceEnabled("uptodown", it) }
+        SwitchRow(
+            "APKMirror",
+            "APK vérifiés (signature du développeur). La dernière étape s'ouvre dans le navigateur intégré (vérification anti-robot du site).",
+            "apkmirror" in s.sources,
+        ) { s.setSourceEnabled("apkmirror", it) }
         SwitchRow(
             "Vérifier la signature",
             "Refuse un APK dont le certificat ne correspond pas à celui du développeur (fortement conseillé)",

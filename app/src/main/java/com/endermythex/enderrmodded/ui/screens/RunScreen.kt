@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import com.endermythex.enderrmodded.MainViewModel
+import com.endermythex.enderrmodded.Route
 import com.endermythex.enderrmodded.core.sources.AppCatalog
 import com.endermythex.enderrmodded.installer.Installer
 import com.endermythex.enderrmodded.pipeline.PipelineRegistry
@@ -157,6 +158,15 @@ fun RunScreen(vm: MainViewModel, packageName: String) {
                         OutlinedButton(onClick = { export.launch("$packageName-${state.version}-enderrmodded.apk") }, modifier = Modifier.weight(1f)) { Text("Enregistrer") }
                         OutlinedButton(onClick = { shareApk(context, output) }, modifier = Modifier.weight(1f)) { Text("Partager") }
                     }
+                }
+                state.browserPage != null -> {
+                    val page = state.browserPage!!
+                    Text(
+                        "APKMirror vérifie que tu n'es pas un robot : termine le téléchargement dans le navigateur intégré, " +
+                            "le patch reprendra automatiquement.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Button(onClick = { vm.open(Route.Browser(page)) }, modifier = Modifier.fillMaxWidth()) { Text("Ouvrir APKMirror") }
                 }
                 else -> Button(onClick = { vm.autoPatch(packageName); vm.back() }, modifier = Modifier.fillMaxWidth()) { Text("Réessayer") }
             }
