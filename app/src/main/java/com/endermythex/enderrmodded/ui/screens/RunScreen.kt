@@ -129,7 +129,16 @@ fun RunScreen(vm: MainViewModel, packageName: String) {
         when (install) {
             Installer.Status.InProgress -> InfoCard { Text("Installation en cours… (confirme si Android le demande)") }
             Installer.Status.Success -> InfoCard { Text("✔ Application installée !", color = MaterialTheme.colorScheme.primary) }
-            is Installer.Status.Failure -> InfoCard { Text(install.message, color = MaterialTheme.colorScheme.error) }
+            is Installer.Status.Failure -> InfoCard {
+                Text(install.message, color = MaterialTheme.colorScheme.error)
+                // Signature différente ou version plus récente déjà installée : il faut retirer l'app d'origine.
+                val installedPkg = state.outputApk?.let { context.packageManager.getPackageArchiveInfo(it.absolutePath, 0)?.packageName }
+                if (installedPkg != null && runCatching { context.packageManager.getPackageInfo(installedPkg, 0) }.isSuccess) {
+                    OutlinedButton(onClick = {
+                        context.startActivity(Intent(Intent.ACTION_DELETE, android.net.Uri.parse("package:$installedPkg")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    }) { Text("Désinstaller l'app d'origine") }
+                }
+            }
             null -> Unit
         }
 

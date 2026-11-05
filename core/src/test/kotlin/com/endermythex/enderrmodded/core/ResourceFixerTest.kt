@@ -32,12 +32,22 @@ class ResourceFixerTest {
     fun removesUnresolvedManifestReferences() {
         val manifest = Files.createTempFile("AndroidManifest", ".xml").toFile()
         manifest.writeText(
-            """<activity android:name="a.B" android:theme="@1427046400" android:exported="false"/>
-              |<activity android:name="a.C" android:theme="@style/Ok" android:label="@string/x"/>""".trimMargin(),
+            """<?xml version="1.0" encoding="utf-8"?>
+              |<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="a">
+              |  <application android:label="@string/app">
+              |    <activity android:name="a.B" android:theme="@1427046400" android:exported="false"/>
+              |    <activity android:name="a.C" android:theme="@style/Ok"/>
+              |    <meta-data android:name="live" android:resource="@1427046400"/>
+              |    <meta-data android:name="keep" android:value="1"/>
+              |  </application>
+              |</manifest>""".trimMargin(),
         )
-        assertEquals(1, ResourceFixer.fixUnresolvedManifestReferences(manifest))
+        assertEquals(2, ResourceFixer.fixUnresolvedManifestReferences(manifest))
         val text = manifest.readText()
-        assertTrue("@1427046400" !in text && "android:exported=\"false\"" in text && "@style/Ok" in text)
+        assertTrue("@1427046400" !in text, text)
+        assertTrue("a.B" in text && "android:exported=\"false\"" in text && "@style/Ok" in text, text)
+        assertTrue("\"live\"" !in text && "\"keep\"" in text, text)
+        assertTrue("xmlns:android" in text, text)
         manifest.delete()
     }
 }

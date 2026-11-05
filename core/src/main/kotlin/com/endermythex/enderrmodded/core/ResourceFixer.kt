@@ -61,27 +61,48 @@ object ResourceFixer {
         return fixed
     }
 
-    private val rawReference = Regex("""\s+[\w.:]+="@(\d+)"""")
+    private val rawReference = Regex("^@\\d+$")
 
     /**
-     * Retire du manifeste décodé les attributs pointant vers une ressource non résolue (ex. "@1427046400").
-     *
-     * apktool écrit ainsi les références vers des modules dynamiques absents de l'APK de base
-     * (ex. TikTok : paquet 0x55 = df_live_cast). aapt2 link refuse ces valeurs ; les composants concernés
-     * appartiennent à des modules non installés, retirer l'attribut est donc sans effet sur l'app.
-     * @return le nombre d'attributs retirés.
+     * Corrige le manifeste décodé : apktool écrit les références vers des modules dynamiques absents de
+     * l'APK de base sous forme brute (ex. TikTok : "@1427046400" = 0x550f0000, module df_live_cast), ce
+     * que aapt2 link refuse.
+     * - sur un `<meta-data>`, on retire l'élément entier (un meta-data sans valeur rend l'APK illisible
+     *   par Android : "Un problème est survenu lors de l'analyse du package") ;
+     * - ailleurs, on retire seulement l'attribut.
+     * Ces éléments concernent des modules non installés : sans effet sur l'app.
+     * @return le nombre de corrections.
      */
     fun fixUnresolvedManifestReferences(manifest: File, log: (String) -> Unit = {}): Int {
         if (!manifest.isFile) return 0
-        val text = manifest.readText()
-        var removed = 0
-        val fixed = rawReference.replace(text) { match ->
-            removed++
-            val id = match.groupValues[1].toLongOrNull()
-            log("Manifeste : attribut non résolu retiré (${match.value.trim().substringBefore('=')} → 0x${id?.toString(16) ?: "?"})")
-            ""
+        val factory = javax.xml.parsers.DocumentBuilderFactory.newInstance().apply { isNamespaceAware = false }
+        val doc = factory.newDocumentBuilder().parse(manifest)
+        var fixes = 0
+        val elements = doc.getElementsByTagName("*")
+        val toRemove = mutableListOf<org.w3c.dom.Element>()
+        for (i in 0 until elements.length) {
+            val element = elements.item(i) as org.w3c.dom.Element
+            val attrs = element.attributes
+            val bad = (0 until attrs.length).map { attrs.item(it) }.filter { rawReference.matches(it.nodeValue) }
+            if (bad.isEmpty()) continue
+            val ids = bad.joinToString { "${it.nodeName} → 0x" + (it.nodeValue.drop(1).toLongOrNull()?.toString(16) ?: "?") }
+            if (element.tagName == "meta-data") {
+                toRemove += element
+                log("Manifeste : <meta-data ${element.getAttribute("android:name")}> retiré (référence non résolue : $ids)")
+            } else {
+                bad.forEach { element.removeAttribute(it.nodeName) }
+                log("Manifeste : attribut non résolu retiré sur <${element.tagName}> ($ids)")
+            }
+            fixes++
         }
-        if (removed > 0) manifest.writeText(fixed)
-        return removed
+        toRemove.forEach { it.parentNode?.removeChild(it) }
+        if (fixes > 0) {
+            val transformer = javax.xml.transform.TransformerFactory.newInstance().newTransformer().apply {
+                setOutputProperty(javax.xml.transform.OutputKeys.ENCODING, "utf-8")
+                setOutputProperty(javax.xml.transform.OutputKeys.INDENT, "yes")
+            }
+            transformer.transform(javax.xml.transform.dom.DOMSource(doc), javax.xml.transform.stream.StreamResult(manifest))
+        }
+        return fixes
     }
 }

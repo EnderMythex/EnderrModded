@@ -84,12 +84,13 @@ class AutoPatcher(private val context: Context) {
             val result = engine.patch(input, selected, "$packageName.apk", report::log)
             input.delete()
             val patchedInfo = context.packageManager.getPackageArchiveInfo(result.apk.absolutePath, 0)
+                ?: error("L'APK patché est illisible par Android (manifeste invalide) : installation impossible.")
             Signatures.ofArchive(context.packageManager, result.apk.absolutePath).firstOrNull()
                 ?.let { settings.ownCertificate = it }
             store.record(
                 PatchedApp(
                     packageName = packageName,
-                    patchedPackageName = patchedInfo?.packageName ?: packageName,
+                    patchedPackageName = patchedInfo.packageName,
                     version = version,
                     patchesTag = settings.patchesTag,
                     patches = selected.mapNotNull { it.name },
@@ -105,6 +106,14 @@ class AutoPatcher(private val context: Context) {
             current = Step.INSTALL
             if (install) {
                 report.step(Step.INSTALL, StepStatus.RUNNING)
+                // Une app déjà installée avec une autre signature bloque l'installation.
+                val installedCerts = Signatures.ofInstalled(context.packageManager, patchedInfo.packageName)
+                if (installedCerts != null && settings.ownCertificate.isNotBlank() && settings.ownCertificate !in installedCerts) {
+                    report.log(
+                        "⚠ ${patchedInfo.packageName} est déjà installé avec la signature d'origine : " +
+                            "désinstalle-le d'abord, sinon Android refusera l'installation.",
+                    )
+                }
                 report.log("Installation…")
                 Installer.install(context, result.apk, packageName)
                 report.step(Step.INSTALL, StepStatus.DONE)

@@ -95,9 +95,12 @@ class InstallReceiver : BroadcastReceiver() {
                     PackageInstaller.STATUS_FAILURE_CONFLICT ->
                         "Conflit de signature : désinstalle d'abord la version existante. $raw"
                     PackageInstaller.STATUS_FAILURE_ABORTED -> "Installation annulée."
+                    PackageInstaller.STATUS_FAILURE_INVALID -> "APK invalide pour Android. $raw"
                     PackageInstaller.STATUS_FAILURE_INCOMPATIBLE -> "APK incompatible avec cet appareil. $raw"
                     PackageInstaller.STATUS_FAILURE_STORAGE -> "Espace de stockage insuffisant."
-                    else -> "Échec de l'installation ($status). $raw"
+                    else -> if (raw.contains("DOWNGRADE", true) || raw.contains("UPDATE_INCOMPATIBLE", true))
+                        "Une autre version de l'app est déjà installée (plus récente ou signée différemment) : désinstalle-la d'abord. $raw"
+                    else "Échec de l'installation ($status). $raw"
                 }
                 Installer.update(key, Installer.Status.Failure(message.trim()))
             }
