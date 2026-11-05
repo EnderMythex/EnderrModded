@@ -31,4 +31,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "EnderrModded"
-include(":app")
+include(":app", ":core")

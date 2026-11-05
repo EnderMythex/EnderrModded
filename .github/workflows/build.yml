@@ -2,6 +2,7 @@ name: Build APK
 
 on:
   push:
+    branches: ["**"]
   pull_request:
   workflow_dispatch:
 
@@ -22,15 +23,32 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Build debug APK
+      - name: Tests unitaires et APK debug
         env:
           # Lecture de revanced-patcher / revanced-library depuis GitHub Packages.
-          # Si GITHUB_TOKEN ne suffit pas, crée un secret GPR_TOKEN (PAT avec read:packages).
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GPR_TOKEN || secrets.GITHUB_TOKEN }}
-        run: ./gradlew --no-daemon assembleDebug
+        run: ./gradlew --no-daemon :core:test assembleDebug
 
       - uses: actions/upload-artifact@v4
         with:
           name: EnderrModded-debug
           path: app/build/outputs/apk/debug/*.apk
+
+  # Vérifie que les sources APK (APKMirror, Uptodown) et GitHub répondent toujours comme prévu.
+  sources:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Tests réseau des sources
+        env:
+          NETWORK_TESTS: "1"
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GPR_TOKEN || secrets.GITHUB_TOKEN }}
+        run: ./gradlew --no-daemon :core:test --tests '*SourcesNetworkTest*' --rerun-tasks

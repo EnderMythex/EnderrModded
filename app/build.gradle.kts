@@ -14,8 +14,22 @@ android {
         applicationId = "com.endermythex.enderrmodded"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        // Fournis par le workflow de release (tag vX.Y.Z), sinon valeurs de dev.
+        versionCode = (System.getenv("VERSION_CODE") ?: "2").toInt()
+        versionName = System.getenv("VERSION_NAME") ?: "0.2.0"
+        buildConfigField("String", "UPDATE_REPO", "\"EnderMythex/EnderrModded\"")
+    }
+
+    val releaseKeystore = System.getenv("KEYSTORE_FILE")?.let { file(it) }?.takeIf { it.exists() }
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = releaseKeystore
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
@@ -23,7 +37,8 @@ android {
             // La minification casse le chargement dynamique des patchs : on la laisse désactivée.
             isMinifyEnabled = false
             isShrinkResources = false
-            signingConfig = signingConfigs.getByName("debug")
+            // Clé stable fournie par les secrets GitHub (nécessaire aux mises à jour de l'app).
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 
@@ -85,6 +100,11 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     debugImplementation("androidx.compose.ui:ui-tooling")
+
+    implementation("androidx.compose.material:material-icons-core:1.7.8")
+    implementation("androidx.work:work-runtime-ktx:2.11.1")
+
+    implementation(project(":core"))
 
     // Moteur de patch ReVanced (GPLv3)
     implementation("app.revanced:patcher-android:22.0.1")

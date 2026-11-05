@@ -13,22 +13,31 @@ import androidx.compose.ui.platform.LocalContext
 
 private val DarkColors = darkColorScheme(
     primary = Color(0xFFB388FF),
+    onPrimary = Color(0xFF21005D),
     secondary = Color(0xFF00E5A0),
+    tertiary = Color(0xFF7FD8FF),
     background = Color(0xFF120B24),
-    surface = Color(0xFF1A1033),
+    surface = Color(0xFF120B24),
+    surfaceVariant = Color(0xFF2A1F45),
+    surfaceContainer = Color(0xFF1C1433),
 )
 
 private val LightColors = lightColorScheme(
     primary = Color(0xFF6A3FD1),
     secondary = Color(0xFF00897B),
+    tertiary = Color(0xFF00658A),
 )
 
 @Composable
-fun EnderrTheme(content: @Composable () -> Unit) {
-    val dark = isSystemInDarkTheme()
+fun EnderrTheme(theme: String = "system", dynamicColor: Boolean = true, content: @Composable () -> Unit) {
+    val dark = when (theme) {
+        "dark" -> true
+        "light" -> false
+        else -> isSystemInDarkTheme()
+    }
     val context = LocalContext.current
     val colors = when {
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
+        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
             if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         dark -> DarkColors
         else -> LightColors

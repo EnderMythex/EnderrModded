@@ -1,275 +1,233 @@
 package com.endermythex.enderrmodded
 
 import android.app.Application
-import android.content.pm.ApplicationInfo
-import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import app.revanced.patcher.patch.Patch
-import com.endermythex.enderrmodded.installer.Installer
-import com.endermythex.enderrmodded.patcher.PatchBundleManager
+import com.endermythex.enderrmodded.core.GitHub
+import com.endermythex.enderrmodded.core.Versions
+import com.endermythex.enderrmodded.core.sources.AppCatalog
+import com.endermythex.enderrmodded.data.PatchedApp
 import com.endermythex.enderrmodded.patcher.PatcherEngine
-import com.endermythex.enderrmodded.patcher.isCompatibleWith
-import com.endermythex.enderrmodded.patcher.versionsFor
+import com.endermythex.enderrmodded.pipeline.ApkProvider
+import com.endermythex.enderrmodded.update.SelfUpdater
+import com.endermythex.enderrmodded.work.PatchWorker
+import com.endermythex.enderrmodded.work.UpdateWorker
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-enum class Screen { Home, AppPicker, Patches, Patching }
+enum class Tab(val label: String) { Apps("Apps"), Patches("Patchs"), Settings("Réglages") }
 
-data class ApkSource(
-    val file: File,
-    val label: String,
+sealed interface Route {
+    data class AppDetail(val packageName: String) : Route
+    data class Run(val packageName: String) : Route
+    data object ManualHome : Route
+    data object ManualPicker : Route
+    data object ManualPatches : Route
+    data object ManualRun : Route
+}
+
+/** Une app ciblée par le bundle de patchs. */
+data class AppEntry(
     val packageName: String,
-    val versionName: String?,
-)
-
-data class InstalledApp(
-    val label: String,
-    val packageName: String,
-    val versionName: String?,
-    val sourceDir: String,
-    val isSplit: Boolean,
-)
-
-data class PatchItem(
-    val patch: Patch,
     val name: String,
-    val description: String?,
-    val recommendedVersions: Set<String>?,
-    val enabledByDefault: Boolean,
-)
+    val patchCount: Int,
+    val recommendedVersion: String?,
+    val installedVersion: String?,
+    val patched: PatchedApp?,
+    val patchedInstalled: Boolean,
+) {
+    /** Une reconstruction apporterait du nouveau (version ou patchs plus récents). */
+    fun needsUpdate(patchesTag: String): Boolean {
+        val p = patched ?: return false
+        return (recommendedVersion != null && Versions.isNewer(recommendedVersion, p.version)) || p.patchesTag != patchesTag
+    }
+}
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
-    private val bundles = PatchBundleManager(app)
-    private val engine = PatcherEngine(app)
-    private val inputApk get() = File(getApplication<Application>().cacheDir, "input/input.apk")
+    private val enderr = app as EnderrApp
+    val settings = enderr.settings
+    val repository = enderr.patches
+    val store = enderr.store
+    private val provider = ApkProvider(app, settings, store)
 
-    var screen by mutableStateOf(Screen.Home); private set
-    var apk by mutableStateOf<ApkSource?>(null); private set
-    var bundleDescription by mutableStateOf<String?>(null); private set
-    var bundleRepo by mutableStateOf("ReVanced/revanced-patches")
+    // ---- Navigation ----
+    var tab by mutableStateOf(Tab.Apps)
+    var stack by mutableStateOf<List<Route>>(emptyList()); private set
+    val route: Route? get() = stack.lastOrNull()
+
+    fun open(route: Route) { stack = stack + route }
+    fun back(): Boolean {
+        if (stack.isEmpty()) return false
+        stack = stack.dropLast(1)
+        return true
+    }
+    fun selectTab(t: Tab) { tab = t; stack = emptyList() }
+
+    // ---- État ----
     var busyMessage by mutableStateOf<String?>(null); private set
     var errorMessage by mutableStateOf<String?>(null); private set
-
-    var installedApps by mutableStateOf<List<InstalledApp>>(emptyList()); private set
-    var patchItems by mutableStateOf<List<PatchItem>>(emptyList()); private set
-    var selected by mutableStateOf<Set<String>>(emptySet()); private set
-
-    var logs by mutableStateOf<List<String>>(emptyList()); private set
-    var isPatching by mutableStateOf(false); private set
-    var result by mutableStateOf<PatcherEngine.Result?>(null); private set
-
-    private var allPatches: Set<Patch> = emptySet()
-    private var patchJob: Job? = null
-
-    init {
-        refreshBundleDescription()
-    }
+    var selfUpdate by mutableStateOf<GitHub.Release?>(null); private set
+    var selfUpdateProgress by mutableStateOf<Float?>(null); private set
+    private var installed by mutableStateOf<Map<String, String?>>(emptyMap())
+    val latestVersions = mutableStateMapOf<String, String?>()
 
     fun dismissError() { errorMessage = null }
 
-    fun navigate(target: Screen) {
-        if (target == Screen.AppPicker && installedApps.isEmpty()) loadInstalledApps()
-        screen = target
-    }
-
-    fun back(): Boolean {
-        screen = when (screen) {
-            Screen.Home -> return false
-            Screen.AppPicker, Screen.Patches -> Screen.Home
-            Screen.Patching -> {
-                if (isPatching) return true
-                Screen.Patches
-            }
-        }
-        return true
-    }
-
-    // ---- Bundle de patchs ----
-
-    private fun refreshBundleDescription() {
-        bundleDescription = if (bundles.hasBundle) {
-            bundles.info()?.let { listOfNotNull(it.name, it.version).joinToString(" ").ifBlank { null } }
-                ?: "Bundle importé"
-        } else null
-    }
-
-    fun importBundle(uri: Uri) = runBusy("Import du bundle…") {
-        bundles.importFrom(uri)
-        allPatches = emptySet()
-        refreshBundleDescription()
-    }
-
-    fun downloadBundle() = runBusy("Téléchargement des patchs depuis ${bundleRepo.trim()}…") {
-        val tag = bundles.downloadLatest(bundleRepo.trim())
-        allPatches = emptySet()
-        refreshBundleDescription()
-        if (bundleDescription == "Bundle importé") bundleDescription = "${bundleRepo.trim()} $tag"
-    }
-
-    // ---- Choix de l'APK ----
-
-    fun importApk(uri: Uri) = runBusy("Copie de l'APK…") {
-        withContext(Dispatchers.IO) {
-            inputApk.parentFile?.mkdirs()
-            val stream = getApplication<Application>().contentResolver.openInputStream(uri)
-                ?: error("Impossible d'ouvrir le fichier")
-            stream.use { input -> inputApk.outputStream().use { input.copyTo(it) } }
-        }
-        apk = readApk(inputApk) ?: run {
-            inputApk.delete()
-            error("Ce fichier n'est pas un APK valide (les .apks / .xapk ne sont pas encore supportés)")
-        }
-    }
-
-    fun selectInstalledApp(app: InstalledApp) {
-        if (app.isSplit) {
-            errorMessage = "${app.label} est installée en APK scindé (split) : non supporté pour l'instant. Utilise un APK complet."
-            return
-        }
-        runBusy("Copie de ${app.label}…") {
-            withContext(Dispatchers.IO) {
-                inputApk.parentFile?.mkdirs()
-                File(app.sourceDir).copyTo(inputApk, overwrite = true)
-            }
-            apk = readApk(inputApk)?.copy(label = app.label)
-            screen = Screen.Home
-        }
-    }
-
-    private fun readApk(file: File): ApkSource? {
-        val pm = getApplication<Application>().packageManager
-        val info = pm.getPackageArchiveInfo(file.absolutePath, 0) ?: return null
-        val appInfo = info.applicationInfo
-        val label = appInfo?.let {
-            it.sourceDir = file.absolutePath
-            it.publicSourceDir = file.absolutePath
-            pm.getApplicationLabel(it).toString()
-        } ?: info.packageName
-        return ApkSource(file, label, info.packageName, info.versionName)
-    }
-
-    private fun loadInstalledApps() = runBusy("Chargement des applications…") {
-        installedApps = withContext(Dispatchers.IO) {
-            val pm = getApplication<Application>().packageManager
-            @Suppress("DEPRECATION")
-            pm.getInstalledPackages(0)
-                .mapNotNull { pkg ->
-                    val ai = pkg.applicationInfo ?: return@mapNotNull null
-                    val isSystem = ai.flags and ApplicationInfo.FLAG_SYSTEM != 0 &&
-                        ai.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP == 0
-                    if (isSystem) return@mapNotNull null
-                    InstalledApp(
-                        label = pm.getApplicationLabel(ai).toString(),
-                        packageName = pkg.packageName,
-                        versionName = pkg.versionName,
-                        sourceDir = ai.sourceDir,
-                        isSplit = !ai.splitSourceDirs.isNullOrEmpty(),
-                    )
-                }
-                .sortedBy { it.label.lowercase() }
-        }
-    }
-
-    // ---- Sélection des patchs ----
-
-    fun openPatches() {
-        val source = apk ?: return
-        runBusy("Chargement des patchs…") {
-            if (allPatches.isEmpty()) allPatches = bundles.load()
-            patchItems = allPatches
-                .filter { it.isCompatibleWith(source.packageName) }
-                .map {
-                    PatchItem(
-                        patch = it,
-                        name = it.name.orEmpty(),
-                        description = it.description,
-                        recommendedVersions = it.versionsFor(source.packageName),
-                        enabledByDefault = it.use,
-                    )
-                }
-                .sortedBy { it.name.lowercase() }
-            selected = patchItems.filter { it.enabledByDefault }.map { it.name }.toSet()
-            if (patchItems.isEmpty()) error("Aucun patch compatible avec ${source.packageName} dans ce bundle.")
-            screen = Screen.Patches
-        }
-    }
-
-    fun toggle(name: String) {
-        selected = if (name in selected) selected - name else selected + name
-    }
-
-    fun selectAll() { selected = patchItems.map { it.name }.toSet() }
-    fun selectNone() { selected = emptySet() }
-    fun selectDefaults() { selected = patchItems.filter { it.enabledByDefault }.map { it.name }.toSet() }
-
-    // ---- Patch ----
-
-    fun startPatching() {
-        val source = apk ?: return
-        val patches = patchItems.filter { it.name in selected }.map { it.patch }.toSet()
-        if (patches.isEmpty()) {
-            errorMessage = "Sélectionne au moins un patch."
-            return
-        }
-        logs = emptyList()
-        result = null
-        isPatching = true
-        Installer.reset()
-        screen = Screen.Patching
-        patchJob = viewModelScope.launch {
+    init {
+        viewModelScope.launch {
             try {
-                result = engine.patch(source.file, patches) { line ->
-                    viewModelScope.launch(Dispatchers.Main) { logs = logs + line }
+                if (!repository.hasBundle) {
+                    busyMessage = "Premier lancement : téléchargement des patchs…"
+                    repository.update()
+                } else {
+                    repository.ensureLoaded()
+                    runCatching { repository.checkForUpdate() }
+                    if (settings.autoUpdatePatches && repository.updateAvailable) {
+                        busyMessage = "Mise à jour des patchs…"
+                        repository.update()
+                    }
                 }
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                appendLog("Annulé.")
             } catch (t: Throwable) {
-                appendLog("ÉCHEC : ${t.message ?: t}")
-                appendLog(t.stackTraceToString().lineSequence().take(15).joinToString("\n"))
+                errorMessage = "Patchs indisponibles : ${t.message ?: t}"
             } finally {
-                isPatching = false
+                busyMessage = null
+            }
+            refreshInstalled()
+        }
+        if (settings.selfUpdateCheck) checkSelfUpdate(silent = true)
+    }
+
+    /** Liste des apps supportées (triée : patchées, installées, puis le reste). */
+    val apps: List<AppEntry>
+        get() {
+            val patches = repository.patches
+            val packages = repository.supportedPackages()
+            return packages.map { pkg ->
+                val selected = repository.selectedPatches(pkg, store.selection(pkg))
+                val patched = store.get(pkg)
+                AppEntry(
+                    packageName = pkg,
+                    name = AppCatalog.nameOf(pkg),
+                    patchCount = patches.count { p -> p.compatiblePackages?.any { it.first == pkg } == true },
+                    recommendedVersion = repository.recommendedVersion(pkg, selected),
+                    installedVersion = installed[pkg],
+                    patched = patched,
+                    patchedInstalled = patched != null && installed.containsKey(patched.patchedPackageName) &&
+                        installed[patched.patchedPackageName] != null,
+                )
+            }.sortedWith(
+                compareByDescending<AppEntry> { it.patched != null }
+                    .thenByDescending { it.installedVersion != null }
+                    .thenByDescending { AppCatalog.apps.containsKey(it.packageName) }
+                    .thenBy { it.name.lowercase() },
+            )
+        }
+
+    fun refreshInstalled() {
+        viewModelScope.launch {
+            installed = withContext(Dispatchers.IO) {
+                val pm = getApplication<Application>().packageManager
+                val wanted = repository.supportedPackages() + store.apps.map { it.patchedPackageName }
+                wanted.associateWith { pkg ->
+                    runCatching { pm.getPackageInfo(pkg, 0).versionName }.getOrNull()
+                }.filterValues { it != null }
             }
         }
     }
 
-    fun cancelPatching() { patchJob?.cancel() }
-
-    private fun appendLog(line: String) { logs = logs + line }
-
-    fun install() {
-        val apkFile = result?.apk ?: return
-        viewModelScope.launch { Installer.install(getApplication(), apkFile) }
-    }
-
-    fun exportTo(uri: Uri) = runBusy("Export de l'APK…") {
-        val apkFile = result?.apk ?: return@runBusy
-        withContext(Dispatchers.IO) {
-            val out = getApplication<Application>().contentResolver.openOutputStream(uri)
-                ?: error("Impossible d'écrire le fichier")
-            out.use { o -> apkFile.inputStream().use { it.copyTo(o) } }
+    fun fetchLatestVersion(packageName: String) {
+        if (latestVersions.containsKey(packageName)) return
+        latestVersions[packageName] = null
+        viewModelScope.launch {
+            latestVersions[packageName] = withContext(Dispatchers.IO) { runCatching { provider.latestVersion(packageName) }.getOrNull() }
         }
     }
 
-    // ---- Utilitaires ----
+    // ---- Patchs ----
+
+    fun updatePatches(force: Boolean = false) = runBusy("Vérification des patchs…") {
+        val changed = repository.update(force)
+        if (!changed) errorMessage = "Les patchs sont déjà à jour (${settings.patchesTag})."
+        refreshInstalled()
+    }
+
+    fun importBundle(uri: Uri) = runBusy("Import du bundle…") { repository.importFrom(uri) }
+
+    fun setSelection(packageName: String, names: Set<String>?) = store.setSelection(packageName, names)
+
+    // ---- Patch auto ----
+
+    fun autoPatch(packageName: String, version: String? = null) {
+        PatchWorker.enqueue(getApplication(), packageName, version)
+        open(Route.Run(packageName))
+    }
+
+    fun cancelPatch(packageName: String) = PatchWorker.cancel(getApplication(), packageName)
+
+    // ---- Mise à jour de l'app ----
+
+    fun checkSelfUpdate(silent: Boolean = false) {
+        viewModelScope.launch {
+            try {
+                selfUpdate = SelfUpdater.check()
+                if (!silent && selfUpdate == null) errorMessage = "EnderrModded est à jour (${BuildConfig.VERSION_NAME})."
+            } catch (t: Throwable) {
+                if (!silent) errorMessage = "Vérification impossible : ${t.message}"
+            }
+        }
+    }
+
+    fun installSelfUpdate() {
+        val release = selfUpdate ?: return
+        viewModelScope.launch {
+            try {
+                selfUpdateProgress = 0f
+                SelfUpdater.downloadAndInstall(getApplication(), release) { selfUpdateProgress = it }
+            } catch (t: Throwable) {
+                errorMessage = "Mise à jour impossible : ${t.message}"
+            } finally {
+                selfUpdateProgress = null
+            }
+        }
+    }
+
+    // ---- Réglages ----
+
+    fun rescheduleChecks() = UpdateWorker.schedule(getApplication(), settings)
+
+    fun clearCache() = runBusy("Nettoyage…") {
+        withContext(Dispatchers.IO) {
+            val app = getApplication<Application>()
+            app.cacheDir.listFiles()?.forEach { it.deleteRecursively() }
+            File(app.filesDir, "output").listFiles()?.forEach { it.delete() }
+        }
+        errorMessage = "Cache vidé."
+    }
+
+    fun exportKeystore(uri: Uri) = runBusy("Export de la clé…") {
+        val keystore = PatcherEngine(getApplication()).keystore
+        check(keystore.exists()) { "Aucune clé : elle est créée au premier patch." }
+        withContext(Dispatchers.IO) {
+            getApplication<Application>().contentResolver.openOutputStream(uri)?.use { out ->
+                keystore.inputStream().use { it.copyTo(out) }
+            } ?: error("Écriture impossible")
+        }
+        errorMessage = "Clé exportée (keystore BKS/PKCS12 sans mot de passe, alias et mot de passe de clé : EnderrModded)."
+    }
+
+    fun forget(packageName: String) = store.forget(packageName)
 
     private fun runBusy(message: String, block: suspend () -> Unit) {
         viewModelScope.launch {
             busyMessage = message
-            try {
-                block()
-            } catch (t: Throwable) {
-                errorMessage = t.message ?: t.toString()
-            } finally {
-                busyMessage = null
-            }
+            try { block() } catch (t: Throwable) { errorMessage = t.message ?: t.toString() } finally { busyMessage = null }
         }
     }
 }

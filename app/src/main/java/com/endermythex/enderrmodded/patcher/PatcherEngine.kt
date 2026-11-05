@@ -8,6 +8,8 @@ import app.revanced.patcher.patcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.logging.Handler
@@ -19,9 +21,8 @@ import java.util.logging.Logger
  * Applique des patchs ReVanced à un APK, puis le signe.
  */
 class PatcherEngine(private val context: Context) {
-    private val workDir get() = File(context.cacheDir, "patcher")
     private val frameworkDir get() = File(context.filesDir, "framework").apply { mkdirs() }
-    private val keystore get() = File(context.filesDir, "signing/enderrmodded.keystore").apply { parentFile?.mkdirs() }
+    val keystore get() = File(context.filesDir, "signing/enderrmodded.keystore").apply { parentFile?.mkdirs() }
     val outputDir get() = File(context.filesDir, "output").apply { mkdirs() }
 
     data class Result(val apk: File, val failedPatches: List<String>)
@@ -29,11 +30,20 @@ class PatcherEngine(private val context: Context) {
     suspend fun patch(
         input: File,
         patches: Set<Patch>,
+        outputName: String = "patched.apk",
+        log: (String) -> Unit,
+    ): Result = lock.withLock { patchLocked(input, patches, outputName, log) }
+
+    private suspend fun patchLocked(
+        input: File,
+        patches: Set<Patch>,
+        outputName: String,
         log: (String) -> Unit,
     ): Result = withContext(Dispatchers.Default) {
         val aapt = Aapt.binary(context)
             ?: error("aapt2 introuvable : l'architecture de cet appareil n'est pas supportée")
 
+        val workDir = File(context.cacheDir, "patcher/${outputName.removeSuffix(".apk")}")
         val handler = LogHandler(log)
         val rootLogger = Logger.getLogger("")
         rootLogger.addHandler(handler)
@@ -72,7 +82,7 @@ class PatcherEngine(private val context: Context) {
             result.applyTo(unsigned)
 
             log("Signature de l'APK…")
-            val output = File(outputDir, "patched.apk")
+            val output = File(outputDir, outputName)
             output.delete()
             ApkUtils.signApk(
                 unsigned,
@@ -85,7 +95,7 @@ class PatcherEngine(private val context: Context) {
             Result(output, failed)
         } finally {
             rootLogger.removeHandler(handler)
-            File(workDir, "tmp").deleteRecursively()
+            workDir.deleteRecursively()
         }
     }
 
@@ -107,5 +117,8 @@ class PatcherEngine(private val context: Context) {
 
     private companion object {
         const val SIGNER = "EnderrModded"
+
+        /** Un seul patch à la fois : gourmand en mémoire et les logs sont globaux. */
+        val lock = Mutex()
     }
 }
