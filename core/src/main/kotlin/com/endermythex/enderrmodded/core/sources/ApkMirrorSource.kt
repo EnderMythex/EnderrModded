@@ -24,8 +24,8 @@ class ApkMirrorSource : ApkSource {
         val known = AppCatalog.apps[packageName]?.apkMirrorPath
         val candidates = buildList {
             if (known != null) add("$base/apk/$known/")
-            val search = get("$base/?post_type=app_release&searchtype=app&s=$packageName")
-            search.select("div.appRow h5.appRowTitle a[href], div.listWidget a.fontBlack[href]")
+            val search = runCatching { get("$base/?post_type=app_release&searchtype=app&s=$packageName") }.getOrNull()
+            search?.select("div.appRow h5.appRowTitle a[href], div.listWidget a.fontBlack[href]").orEmpty()
                 .map { it.absUrl("href") }
                 .filter { it.contains("/apk/") }
                 .map { url -> url.substringBefore("/apk/") + "/apk/" + url.substringAfter("/apk/").split('/').take(2).joinToString("/") + "/" }
@@ -33,14 +33,17 @@ class ApkMirrorSource : ApkSource {
                 .take(5)
                 .forEach { add(it) }
         }
+        val errors = mutableListOf<String>()
         for (url in candidates.distinct()) {
-            val page = runCatching { Http.getString(url) }.getOrNull() ?: continue
+            val page = runCatching { Http.getString(url, mapOf("Referer" to "$base/")) }
+                .onFailure { errors += "${url.removePrefix(base)} → ${it.message}" }
+                .getOrNull() ?: continue
             if (page.contains("id=$packageName\"") || page.contains("id=$packageName&")) {
                 appUrlCache[packageName] = url
                 return url
             }
         }
-        throw SourceException("Application $packageName introuvable sur APKMirror")
+        throw SourceException("Application $packageName introuvable sur APKMirror ${errors.joinToString(prefix = "(", postfix = ")")}")
     }
 
     override fun versions(packageName: String): List<String> {

@@ -40,7 +40,10 @@ fun SettingsScreen(vm: MainViewModel) {
         BusyRow(vm.busyMessage)
 
         SectionTitle("Patchs")
-        ClickRow("Source des patchs", "${s.patchesRepo} (dépôt GitHub)") { editRepo = true }
+        ClickRow(
+            "Source des patchs",
+            if (s.patchesRepo.startsWith("http")) "${s.patchesRepo} (API)" else "${s.patchesRepo} (dépôt GitHub)",
+        ) { editRepo = true }
         SwitchRow("Mise à jour automatique des patchs", "Télécharge les nouveaux patchs dès qu'ils sortent", s.autoUpdatePatches) { s.autoUpdatePatches = it }
         SwitchRow("Versions de test (pré-releases)", "Patchs en développement, moins stables", s.patchesPrerelease) { s.patchesPrerelease = it }
 
@@ -120,7 +123,10 @@ fun SettingsScreen(vm: MainViewModel) {
             onDismissRequest = { editRepo = false },
             title = { Text("Source des patchs") },
             text = {
-                OutlinedTextField(value, { value = it.trim() }, label = { Text("owner/repo") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Column {
+                    Text("URL d'une API compatible ReVanced (ex. https://api.revanced.app) ou dépôt GitHub owner/repo publiant des .rvp.")
+                    OutlinedTextField(value, { value = it.trim() }, label = { Text("Source") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                }
             },
             confirmButton = {
                 TextButton(onClick = {

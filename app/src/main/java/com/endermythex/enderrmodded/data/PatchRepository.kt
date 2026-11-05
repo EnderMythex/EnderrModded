@@ -9,6 +9,7 @@ import app.revanced.patcher.patch.Patch
 import app.revanced.patcher.patch.loadPatches
 import com.endermythex.enderrmodded.core.GitHub
 import com.endermythex.enderrmodded.core.Http
+import com.endermythex.enderrmodded.core.PatchSources
 import com.endermythex.enderrmodded.core.Versions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -53,7 +54,7 @@ class PatchRepository(private val context: Context, private val settings: Settin
 
     /** Interroge GitHub pour connaître la dernière release. */
     suspend fun checkForUpdate(): GitHub.Release = withContext(Dispatchers.IO) {
-        GitHub.latestRelease(settings.patchesRepo, settings.patchesPrerelease).also { latestRelease = it }
+        PatchSources.latest(settings.patchesRepo, settings.patchesPrerelease).also { latestRelease = it }
     }
 
     /**
@@ -68,12 +69,13 @@ class PatchRepository(private val context: Context, private val settings: Settin
             return false
         }
         val asset = release.assets.firstOrNull { it.name.endsWith(".rvp") }
-            ?: error("Aucun fichier .rvp dans la release ${release.tag} de ${settings.patchesRepo}")
+            ?: error("Aucun fichier .rvp dans la version ${release.tag} de ${settings.patchesRepo}")
         log("Téléchargement des patchs ${release.tag}…")
         mutex.withLock {
             withContext(Dispatchers.IO) {
                 val tmp = File(dir, "download.rvp")
-                Http.download(asset.url, tmp, mapOf("Accept" to "application/octet-stream"))
+                val headers = if (PatchSources.isApi(settings.patchesRepo)) emptyMap() else mapOf("Accept" to "application/octet-stream")
+                Http.download(asset.url, tmp, headers)
                 tmp.inputStream().use { save(it) }
                 tmp.delete()
             }

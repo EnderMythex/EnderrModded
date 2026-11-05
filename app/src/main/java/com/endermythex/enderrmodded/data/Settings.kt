@@ -65,7 +65,13 @@ class Settings(context: Context) {
     private fun int(key: String, default: Int) =
         pref(key, { prefs.getInt(key, default) }) { prefs.edit().putInt(key, it).apply() }
 
+    init {
+        // Le dépôt GitHub ReVanced/revanced-patches n'est plus accessible : on passe par l'API officielle.
+        if (patchesRepo == "ReVanced/revanced-patches") patchesRepo = DEFAULT_PATCHES_REPO
+    }
+
     companion object {
-        const val DEFAULT_PATCHES_REPO = "ReVanced/revanced-patches"
+        /** API officielle ReVanced (même source que ReVanced Manager). */
+        const val DEFAULT_PATCHES_REPO = com.endermythex.enderrmodded.core.PatchSources.REVANCED_API
     }
 }

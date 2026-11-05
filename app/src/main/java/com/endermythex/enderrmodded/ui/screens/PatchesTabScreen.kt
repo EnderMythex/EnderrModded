@@ -42,7 +42,7 @@ fun PatchesTabScreen(vm: MainViewModel) {
                 InfoCard {
                     Text("Source : ${vm.settings.patchesRepo}", style = MaterialTheme.typography.titleSmall)
                     Text("Installé : ${vm.settings.patchesTag.ifBlank { "aucun" }}")
-                    repo.latestRelease?.let { Text("Dernière release : ${it.tag}" + if (repo.updateAvailable) " (nouvelle !)" else "") }
+                    repo.latestRelease?.let { Text("Dernière version : ${it.tag}" + if (repo.updateAvailable) " (nouvelle !)" else "") }
                     repo.loadError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = { vm.updatePatches() }, enabled = vm.busyMessage == null) { Text("Mettre à jour") }

@@ -58,6 +58,29 @@ class UptodownSource : ApkSource {
 
     override fun latestVersion(packageName: String): String? = runCatching { versions(packageName).firstOrNull() }.getOrNull()
 
+    private fun findDataUrl(page: Document): String? {
+        val candidates = listOf(
+            "#detail-download-button[data-url]",
+            "button#detail-download-button[data-url]",
+            "[id*=download][data-url]",
+            "button[data-url]",
+            ".button.download[data-url]",
+            "[data-url]",
+        )
+        for (selector in candidates) {
+            val value = page.select(selector).map { it.attr("data-url") }
+                .firstOrNull { it.isNotBlank() && !it.startsWith("http") && !it.startsWith("/") }
+            if (value != null) return value
+        }
+        return null
+    }
+
+    /** Résumé des éléments utiles de la page, pour diagnostiquer un changement du site. */
+    private fun describe(page: Document): String =
+        page.select("[data-url], [id*=download], .button").take(8).joinToString(" | ") { el ->
+            "<${el.tagName()} id=${el.id()} class=${el.className()} data-url=${el.attr("data-url").take(40)}>"
+        }.ifBlank { page.title() }
+
     override fun download(
         packageName: String,
         version: String,
@@ -101,8 +124,8 @@ class UptodownSource : ApkSource {
             page = get("$base/download/${chosen.fileId}-x")
         }
 
-        val dataUrl = page.selectFirst("#detail-download-button[data-url]")?.attr("data-url")
-            ?: throw SourceException("Lien de téléchargement introuvable sur Uptodown")
+        val dataUrl = findDataUrl(page)
+            ?: throw SourceException("Lien de téléchargement introuvable sur Uptodown (${page.location()}) : ${describe(page)}")
         val file = File(destinationDir, "$packageName-$version.${if (isBundle) "xapk" else "apk"}")
         Http.download("https://dw.uptodown.com/dwn/$dataUrl", file, mapOf("Referer" to entry.url), onProgress)
         return DownloadedApk(file, version, isBundle, displayName)

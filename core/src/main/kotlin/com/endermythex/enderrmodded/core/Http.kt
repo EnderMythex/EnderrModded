@@ -21,13 +21,27 @@ object Http {
         }
     }
 
-    class HttpException(val code: Int, url: String) : IOException("HTTP $code : $url")
+    class HttpException(val code: Int, url: String, val retryAfterSeconds: Long? = null) : IOException("HTTP $code : $url")
 
     fun open(
         url: String,
         headers: Map<String, String> = emptyMap(),
         userAgent: String = BROWSER_UA,
     ): HttpURLConnection {
+        var attempt = 0
+        while (true) {
+            try {
+                return openOnce(url, headers, userAgent)
+            } catch (e: HttpException) {
+                // Trop de requêtes / service indisponible : on patiente puis on réessaie.
+                if ((e.code != 429 && e.code != 503) || attempt >= 3) throw e
+                Thread.sleep((e.retryAfterSeconds ?: (2L shl attempt)).coerceAtMost(30) * 1000)
+                attempt++
+            }
+        }
+    }
+
+    private fun openOnce(url: String, headers: Map<String, String>, userAgent: String): HttpURLConnection {
         var current = url
         repeat(10) {
             val connection = (URL(current).openConnection() as HttpURLConnection).apply {
@@ -46,8 +60,9 @@ object Http {
                 return@repeat
             }
             if (code !in 200..299) {
+                val retryAfter = connection.getHeaderField("Retry-After")?.toLongOrNull()
                 connection.disconnect()
-                throw HttpException(code, current)
+                throw HttpException(code, current, retryAfter)
             }
             return connection
         }

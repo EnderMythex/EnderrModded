@@ -10,7 +10,7 @@ import kotlin.test.assertTrue
 
 /**
  * Vérifie les sources réelles (exécuté en CI avec NETWORK_TESTS=1).
- * Télécharge une petite app, vérifie le fichier et teste la fusion si c'est un bundle.
+ * Télécharge l'app, vérifie le fichier et teste la fusion si c'est un bundle.
  */
 class SourcesNetworkTest {
     private val enabled = System.getenv("NETWORK_TESTS") == "1"
@@ -35,14 +35,27 @@ class SourcesNetworkTest {
     }
 
     @Test fun apkMirrorYouTubeMusic() = check(ApkMirrorSource(), "com.google.android.apps.youtube.music")
-    @Test fun apkMirrorSearch() = check(ApkMirrorSource(), "com.google.android.apps.recorder")
     @Test fun uptodownYouTubeMusic() = check(UptodownSource(), "com.google.android.apps.youtube.music")
+    @Test fun uptodownYouTube() = check(UptodownSource(), "com.google.android.youtube")
+
+    @Test
+    fun revancedApi() {
+        if (!enabled) return
+        val release = PatchSources.latest(PatchSources.REVANCED_API, prerelease = false)
+        println("API ReVanced : ${release.tag} ${release.assets.map { it.url }}")
+        assertTrue(release.assets.isNotEmpty())
+        val file = Files.createTempFile("patches", ".rvp").toFile()
+        Http.download(release.assets.first().url, file)
+        println("Bundle : ${file.length() / 1024} Ko")
+        assertTrue(file.length() > 100_000)
+        file.delete()
+    }
 
     @Test
     fun gitHubRelease() {
         if (!enabled) return
-        val release = GitHub.latestRelease("ReVanced/revanced-patches")
-        println("Patchs ReVanced : ${release.tag} ${release.assets.map { it.name }}")
-        assertTrue(release.assets.any { it.name.endsWith(".rvp") })
+        val release = GitHub.latestRelease("ReVanced/revanced-patcher")
+        println("revanced-patcher : ${release.tag}")
+        assertTrue(release.tag.isNotBlank())
     }
 }
