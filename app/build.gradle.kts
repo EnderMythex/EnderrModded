@@ -111,7 +111,8 @@ dependencies {
     implementation(platform("androidx.compose:compose-bom:2026.02.01"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.compose.material3:material3")
+    // 1.5 alpha : indicateurs de progression ondulés (Material 3 Expressive), comme ReVanced Manager.
+    implementation("androidx.compose.material3:material3:1.5.0-alpha15")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     implementation("androidx.compose.material:material-icons-core:1.7.8")
