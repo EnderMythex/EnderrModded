@@ -4,6 +4,7 @@ import app.revanced.library.ApkUtils
 import app.revanced.library.ApkUtils.applyTo
 import app.revanced.patcher.patch.Patch
 import app.revanced.patcher.patcher
+import com.endermythex.enderrmodded.core.ResourceFixer
 import java.io.File
 import java.util.logging.Handler
 import java.util.logging.Level
@@ -61,6 +62,9 @@ object PatchCore {
                 }
             }
             handler.summary()
+
+            // Images mal nommées (WebP en .png…) que aapt2 refuserait à la recompilation.
+            ResourceFixer.fixMismatchedImages(File(workDir, "tmp/apk/res"), log)
 
             log("Écriture de l'APK patché…")
             val unsigned = File(workDir, "unsigned.apk")
